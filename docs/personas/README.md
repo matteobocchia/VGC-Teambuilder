@@ -1,40 +1,49 @@
 # User personas — VGC Forge
 
-Queste personas rappresentano le persone che possono usare VGC Forge per preparare team Pokémon Champions o analizzare un matchup. Sono scenari di prodotto, non profili anagrafici reali.
+Queste personas descrivono utenti concreti che preparano partite VGC usando Pokémon Showdown, paste pubbliche e calcoli manuali. Non sono profili demografici: sono scenari da usare per progettare il team builder, il calculator e il backend multi-formato.
 
 ## Mappa delle personas
 
-| Persona | Lingua prevalente | Uso principale | Priorità |
-| --- | --- | --- | --- |
-| [Luca](./01-luca-competitive-player.md) | Italiano | Preparazione torneo e matchup | Primaria |
-| [James](./07-james-english-competitive-player.md) | Inglese | Preparazione torneo e matchup | Primaria |
-| [Sara](./02-sara-developing-player.md) | Italiano | Imparare a costruire set | Primaria |
-| [Marta](./03-marta-coach-analyst.md) | Italiano / inglese | Coaching e confronto varianti | Primaria |
-| [Tommaso](./04-tommaso-standalone-calculator.md) | Italiano / inglese | Calcolatore senza team | Primaria |
-| [Giulia](./05-giulia-content-creator.md) | Italiano / inglese | Guide e scenari condivisi | Secondaria |
-| [Andrea](./06-andrea-rules-maintainer.md) | Tecnica inglese / italiano | Dati, regole e release | Interna / futura |
+| Persona | Lingua UI | Rapporto con Showdown | Flusso principale | Priorità |
+| --- | --- | --- | --- | --- |
+| [Davide](./01-davide-showdown-player-it.md) | Italiano | Copia paste e set da Showdown | Ricreare e rifinire un team per un torneo | Primaria |
+| [Rachel](./02-rachel-showdown-player-en.md) | Inglese | Showdown è il riferimento principale | Importare, controllare e condividere in inglese | Primaria |
+| [Elisa](./03-elisa-developing-player.md) | Italiano | Usa team pubblici Showdown come esempio | Capire un set e costruire il primo team | Primaria |
+| [Marco](./04-marco-coach-analyst.md) | Italiano / inglese | Confronta paste, varianti e report | Analizzare set e matchup con un atleta | Primaria |
+| [Nina](./05-nina-standalone-calculator.md) | Inglese / italiano | Incolla singoli set dal teambuilder Showdown | Calcolare un dubbio senza salvare un team | Primaria |
+| [Alex](./06-alex-data-maintainer.md) | Inglese tecnico | Verifica compatibilità con il formato Showdown | Mantenere regole, cataloghi e release | Interna / futura |
 
-## Contesto comune
+## Contesto comune del prodotto
 
-- Il formato iniziale è Pokémon Champions Regulation M-B Doubles; il backend deve poter supportare altri formati in futuro.
-- Un team contiene sei Pokémon. In v1 non esistono ancora stati attivo/riserve.
-- Il livello è 50; non esistono IV. Gli Stat Points vanno da 0 a 32 per statistica, con un massimo di 66 complessivi.
-- Le statistiche finali derivano automaticamente da specie, livello, Stat Points e natura.
-- Le combinazioni illegali non si possono creare; un import non rappresentabile viene rifiutato con un elenco di problemi.
-- Il calcolatore funziona sia con un team sia in modalità standalone, con Pokémon inseriti manualmente.
+- Il primo formato è Pokémon Champions Regulation M-B Doubles.
+- Il backend deve modellare il formato come profilo versionato, così in futuro può supportare altri formati senza duplicare la UI o le formule.
+- Un team contiene sei Pokémon. Nella v1 non esistono stati attivo/riserve.
+- Il livello è 50, gli IV non esistono e gli Stat Points sono da 0 a 32 per statistica, con massimo totale 66.
+- Le statistiche finali derivano automaticamente da specie/forma, livello, natura e Stat Points.
+- Le combinazioni illegali non si possono creare. Un import non rappresentabile deve essere rifiutato con un elenco di problemi, mai corretto in silenzio.
+- Il damage calculator funziona sia collegato a un team sia in modalità standalone, con Pokémon inseriti manualmente.
+- Login, account, pannello admin e social feed sono fuori dalla v1.
 
-## Invariante del set attivo
+## Cosa significa “compatibile con Showdown”
 
-Il set attivo è la configurazione completa del Pokémon selezionato nello slot corrente. Se cambia lo slot, devono aggiornarsi insieme specie/forma, ruolo, Tera Tipo, strumento, abilità, natura, Stat Points, statistiche finali, mosse e lato del matchup.
+Showdown è una sorgente tecnica, non la lingua obbligatoria dell’interfaccia.
 
-Non devono rimanere valori del Pokémon precedente, né risultati riferiti a un attaccante o difensore diverso da quello visibile.
+- Una paste Showdown può contenere nomi, mosse, strumenti, abilità, natura, EV e IV nel formato tecnico inglese.
+- Champions deve tradurre il contenuto in un modello canonico, applicare le regole Champions e mostrare eventuali problemi con elenco esplicito.
+- In UI italiana si mostrano i nomi ufficiali italiani; in UI inglese quelli ufficiali inglesi. Non si deve mostrare `Grassy Terrain` accanto a `Campo Elettrico` nella stessa lingua o accorciare solo alcuni nomi.
+- Cambiare IT/EN cambia la presentazione, non il Pokémon, il set, il formato, il campo o il risultato.
+- Il copia/incolla Showdown deve restare disponibile come formato tecnico di interscambio, anche quando la UI è italiana.
 
-## Lingua
+## Invarianti da verificare in ogni schermata
 
-La lingua è un contesto dell’utente, non una proprietà del calcolo. L’utente italiano deve vedere nomi italiani ufficiali; l’utente inglese deve vedere nomi inglesi ufficiali. La stessa schermata non deve mescolare abbreviazioni o traduzioni parziali: per esempio `Campo Erboso` e `Grassy Terrain` sono equivalenti in due locali diversi, non due label da mostrare insieme.
+1. Lo slot selezionato identifica sempre un solo Pokémon/forma e il suo set completo.
+2. Specie, Tera, strumento, abilità, natura, Stat Points, statistiche derivate e mosse vengono aggiornati insieme.
+3. Una modifica non può superare 32 punti su una statistica o 66 totali.
+4. Un risultato mostra sempre attaccante, difensore, mossa, modalità e condizioni di campo usate.
+5. Nessun dato Showdown viene perso o sostituito da un fallback senza messaggio.
+6. Il calcolatore standalone non obbliga a creare o salvare un team.
+7. Formato e release dati sono visibili e riproducibili.
 
-Showdown può restare il formato tecnico inglese di import/export. Cambiare IT/EN deve cambiare solo la presentazione, non Pokémon, input, regole o risultato. Un link read-only deve poter essere aperto da utenti con locale diverso.
+## Gap consapevoli della v1
 
-## Fuori perimetro v1
-
-Login, pannello admin, social feed, ranking e gestione tornei non fanno parte della prima versione. Andrea rappresenta un’esigenza architetturale futura, non una schermata da costruire ora.
+La prima versione può partire dalla creazione manuale da zero. L’import/export Showdown è un flusso prioritario successivo, non un comportamento da simulare con dati demo o con correzioni silenziose.

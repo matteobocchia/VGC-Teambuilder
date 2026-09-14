@@ -37,6 +37,7 @@ type Mode = 'doubles' | 'singles';
 type StatKey = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
 type Move = { name: string; type: string; power: number | null; range: string; ko: string; score: number | null };
 type PokemonSet = { tera: string; item: string; ability: string; nature: string; statPoints: Record<StatKey, number>; moves: string[] };
+type BuilderSlot = { pokemonName: string; set: PokemonSet } | null;
 type WeatherKey = 'clear' | 'sun' | 'rain' | 'sand' | 'snow';
 type TerrainKey = 'none' | 'electric' | 'grassy' | 'psychic' | 'misty';
 type FieldEffectKey = 'reflect' | 'lightScreen' | 'auroraVeil' | 'safeguard' | 'tailwind' | 'trickRoom' | 'gravity';
@@ -60,6 +61,8 @@ const team: Pokemon[] = [
   { name: 'Farigiraf', role: 'Trick Room support', types: ['Normal', 'Psychic'], baseStats: { hp: 120, atk: 90, def: 70, spa: 110, spd: 70, spe: 60 } },
 ];
 
+const pokemonCatalog = team;
+
 const defaultSets: Record<string, PokemonSet> = {
   'Flutter Mane': { tera: 'Fairy', item: 'Choice Specs', ability: 'Protosynthesis', nature: 'Timid (+Spe, -Atk)', statPoints: { hp: 4, atk: 0, def: 0, spa: 32, spd: 4, spe: 26 }, moves: ['Moonblast', 'Shadow Ball', 'Mystical Fire', 'Protect'] },
   Incineroar: { tera: 'Grass', item: 'Safety Goggles', ability: 'Intimidate', nature: 'Careful (+SpD, -SpA)', statPoints: { hp: 28, atk: 0, def: 20, spa: 0, spd: 18, spe: 0 }, moves: ['Flare Blitz', 'Knock Off', 'Parting Shot', 'Fake Out'] },
@@ -68,6 +71,16 @@ const defaultSets: Record<string, PokemonSet> = {
   Amoonguss: { tera: 'Water', item: 'Rocky Helmet', ability: 'Regenerator', nature: 'Bold (+Def, -Atk)', statPoints: { hp: 32, atk: 0, def: 32, spa: 0, spd: 0, spe: 0 }, moves: ['Spore', 'Rage Powder', 'Pollen Puff', 'Protect'] },
   Farigiraf: { tera: 'Fairy', item: 'Mental Herb', ability: 'Armor Tail', nature: 'Quiet (+SpA, -Spe)', statPoints: { hp: 28, atk: 0, def: 0, spa: 32, spd: 6, spe: 0 }, moves: ['Psychic', 'Hyper Voice', 'Trick Room', 'Helping Hand'] },
 };
+
+function restoreBuilderSlots(rawSlots: unknown): BuilderSlot[] {
+  const stored = Array.isArray(rawSlots) ? rawSlots : [];
+  return Array.from({ length: 6 }, (_, index) => {
+    const storedSlot = stored[index] as Partial<BuilderSlot & { pokemonName: string; set: PokemonSet }> | null | undefined;
+    if (!storedSlot || typeof storedSlot.pokemonName !== 'string' || !defaultSets[storedSlot.pokemonName]) return null;
+    const defaults = defaultSets[storedSlot.pokemonName];
+    return { pokemonName: storedSlot.pokemonName, set: { ...cloneSet(defaults), ...storedSlot.set, statPoints: { ...defaults.statPoints, ...storedSlot.set?.statPoints }, moves: Array.isArray(storedSlot.set?.moves) && storedSlot.set.moves.length === 4 ? [...storedSlot.set.moves] : cloneSet(defaults).moves } };
+  });
+}
 
 const natureMultiplier = (nature: string, stat: StatKey) => {
   const raised = nature.match(/\+([A-Za-z]+)/)?.[1];
@@ -86,6 +99,22 @@ function deriveStats(pokemon: Pokemon, set: PokemonSet) {
   }, {} as Record<StatKey, number>);
 }
 
+function cloneSet(set: PokemonSet): PokemonSet {
+  return { ...set, statPoints: { ...set.statPoints }, moves: [...set.moves] };
+}
+
+function clampStatPoints(raw: Record<StatKey, number>, changedKey: StatKey): Record<StatKey, number> {
+  const nextPoints = statKeys.reduce((result, key) => ({ ...result, [key]: Math.min(32, Math.max(0, Number.isFinite(Number(raw[key])) ? Math.round(Number(raw[key])) : 0)) }), {} as Record<StatKey, number>);
+  let overflow = statKeys.reduce((sum, key) => sum + nextPoints[key], 0) - 66;
+  for (const key of [...statKeys.filter((key) => key !== changedKey), changedKey]) {
+    if (overflow <= 0) break;
+    const reduction = Math.min(nextPoints[key], overflow);
+    nextPoints[key] -= reduction;
+    overflow -= reduction;
+  }
+  return nextPoints;
+}
+
 const moveCatalog: Record<string, Move> = {
   Moonblast: { name: 'Moonblast', type: 'Fairy', power: 95, range: '112–132', ko: '88%', score: 88 }, ShadowBall: { name: 'Shadow Ball', type: 'Ghost', power: 80, range: '71–84', ko: '43%', score: 43 }, MysticalFire: { name: 'Mystical Fire', type: 'Fire', power: 75, range: '56–67', ko: '6%', score: 6 }, Protect: { name: 'Protect', type: 'Normal', power: null, range: '—', ko: '—', score: null },
   FlareBlitz: { name: 'Flare Blitz', type: 'Fire', power: 120, range: '98–116', ko: '71%', score: 71 }, KnockOff: { name: 'Knock Off', type: 'Dark', power: 65, range: '64–76', ko: '22%', score: 22 }, PartingShot: { name: 'Parting Shot', type: 'Dark', power: null, range: '—', ko: '—', score: null }, FakeOut: { name: 'Fake Out', type: 'Normal', power: 40, range: '21–25', ko: '0%', score: 0 },
@@ -102,10 +131,10 @@ function movesForSet(set: PokemonSet) {
 
 const copy = {
   it: {
-    team: 'Team', attacker: 'Attaccante', defender: 'Difensore', attackerSlot: 'Slot attaccante', defenderSlot: 'Slot difensore', setup: 'Set attivo', route: 'Percorso matchup', outcomes: 'Esiti mosse', field: 'Campo e condizioni', format: 'Champions · Regulation M-B', language: 'Italiano', languageLabel: 'Lingua', formatLabel: 'Formato', primaryNav: 'Navigazione principale', inspectorOptions: 'Opzioni inspector (prossimamente)', save: 'Salva team', saved: 'Salvato', teamFull: 'Team completo', autoSave: 'Salvataggio locale manuale', demoRoster: 'Roster demo · scenario temporaneo', level: 'Livello', tera: 'Tera tipo', item: 'Strumento', ability: 'Abilità', nature: 'Natura', statPoints: 'Stat Points', moves: 'Mosse', add: 'Aggiungi Pokémon', fieldTerrain: 'Campo Elettrico', fieldReflect: 'Riflesso', weather: 'Meteo', terrain: 'Campo', clear: 'Nessun meteo', rain: 'Pioggia', sand: 'Tempesta di sabbia', snow: 'Neve', terrainNone: 'Nessun campo', grassyTerrain: 'Campo Erboso', psychicTerrain: 'Campo Psichico', mistyTerrain: 'Campo Nebbioso', screens: 'Schermate e protezioni', speedSpace: 'Velocità e spazio', lightScreen: 'Schermoluce', auroraVeil: 'Velaurora', safeguard: 'Salvaguardia', tailwind: 'Ventoincoda', trickRoom: 'Distortozona', gravity: 'Gravità', activeEffects: 'effetti attivi', fieldSummary: 'Stato simulazione', primary: 'Risultato principale', versus: 'contro', damage: 'Danno', power: 'Potenza', ko: 'KO %', koChance: 'Probabilità KO', selectMove: 'Seleziona mossa', battleMode: 'Modalità lotta', preset: 'Preset UI', allRolls: 'Tutti i roll', critical: 'Critico', spread: 'Spread', details: 'Dettagli', calculator: 'Calcolatore danni', builder: 'Team builder', formatWarning: 'Validità formato: informativa', statHint: '0–32 per statistica · 66 totali', turns: 'turni', sun: 'Luce solare intensa', sunUnavailable: 'Disponibile prossimamente', off: 'disattivo', howItWorks: 'Come funziona', accuracyNote: 'I valori mostrati sono un preset di interfaccia in attesa dell’engine server-side.',
+    team: 'Team', attacker: 'Attaccante', defender: 'Difensore', attackerSlot: 'Slot attaccante', defenderSlot: 'Slot difensore', setup: 'Set attivo', route: 'Percorso matchup', outcomes: 'Esiti mosse', field: 'Campo e condizioni', format: 'Champions · Regulation M-B', language: 'Italiano', languageLabel: 'Lingua', formatLabel: 'Formato', primaryNav: 'Navigazione principale', inspectorOptions: 'Opzioni inspector (prossimamente)', save: 'Salva team', saved: 'Salvato', teamFull: 'Team completo', autoSave: 'Salvataggio locale manuale', demoRoster: 'Roster demo · scenario temporaneo', level: 'Livello', tera: 'Tera tipo', item: 'Strumento', ability: 'Abilità', nature: 'Natura', statPoints: 'Stat Points', moves: 'Mosse', add: 'Aggiungi Pokémon', fieldTerrain: 'Campo Elettrico', fieldReflect: 'Riflesso', weather: 'Meteo', terrain: 'Campo', clear: 'Nessun meteo', rain: 'Pioggia', sand: 'Tempesta di sabbia', snow: 'Neve', terrainNone: 'Nessun campo', grassyTerrain: 'Campo Erboso', psychicTerrain: 'Campo Psichico', mistyTerrain: 'Campo Nebbioso', screens: 'Schermate e protezioni', speedSpace: 'Velocità e spazio', lightScreen: 'Schermoluce', auroraVeil: 'Velaurora', safeguard: 'Salvaguardia', tailwind: 'Ventoincoda', trickRoom: 'Distortozona', gravity: 'Gravità', activeEffects: 'effetti attivi', fieldSummary: 'Stato simulazione', primary: 'Risultato principale', versus: 'contro', damage: 'Danno', power: 'Potenza', ko: 'KO %', koChance: 'Probabilità KO', selectMove: 'Seleziona mossa', battleMode: 'Modalità lotta', preset: 'Preset UI', allRolls: 'Tutti i roll', critical: 'Critico', spread: 'Spread', details: 'Dettagli', calculator: 'Calcolatore danni', builder: 'Team builder', formatWarning: 'Validità formato: informativa', statHint: '0–32 per statistica · 66 totali', turns: 'turni', sun: 'Luce solare intensa', sunUnavailable: 'Disponibile prossimamente', off: 'disattivo', howItWorks: 'Come funziona', accuracyNote: 'I valori mostrati sono un preset di interfaccia in attesa dell’engine server-side.', newTeam: 'Nuovo team', teamName: 'Nome team', emptySlot: 'Slot vuoto', addPokemon: 'Aggiungi Pokémon', searchPokemon: 'Cerca Pokémon', catalog: 'Catalogo Pokémon', selectSlot: 'Seleziona uno slot', emptyBuilderHelp: 'Scegli un Pokémon dal catalogo per iniziare a costruire il team.', removePokemon: 'Rimuovi Pokémon', choosePokemon: 'Scegli Pokémon', moveHint: 'Scegli una mossa per ogni slot', catalogHint: 'Dati disponibili per il prototipo Champions', noResults: 'Nessun Pokémon trovato', savedLocally: 'Salvato nel browser', emptyTeam: 'Nessun Pokémon nel team',
   },
   en: {
-    team: 'Team', attacker: 'Attacker', defender: 'Defender', attackerSlot: 'Attacker slot', defenderSlot: 'Defender slot', setup: 'Active set', route: 'Matchup route', outcomes: 'Move outcomes', field: 'Field & conditions', format: 'Champions · Regulation M-B', language: 'English', languageLabel: 'Language', formatLabel: 'Format', primaryNav: 'Primary navigation', inspectorOptions: 'Inspector options (coming soon)', save: 'Save team', saved: 'Saved', teamFull: 'Team full', autoSave: 'Manual local save', demoRoster: 'Demo roster · temporary scenario', level: 'Level', tera: 'Tera type', item: 'Held item', ability: 'Ability', nature: 'Nature', statPoints: 'Stat Points', moves: 'Moves', add: 'Add Pokémon', fieldTerrain: 'Electric Terrain', fieldReflect: 'Reflect', weather: 'Weather', terrain: 'Terrain', clear: 'No weather', rain: 'Rain', sand: 'Sandstorm', snow: 'Snow', terrainNone: 'No terrain', grassyTerrain: 'Grassy Terrain', psychicTerrain: 'Psychic Terrain', mistyTerrain: 'Misty Terrain', screens: 'Screens & protection', speedSpace: 'Speed & space', lightScreen: 'Light Screen', auroraVeil: 'Aurora Veil', safeguard: 'Safeguard', tailwind: 'Tailwind', trickRoom: 'Trick Room', gravity: 'Gravity', activeEffects: 'active effects', fieldSummary: 'Simulation state', primary: 'Primary result', versus: 'vs', damage: 'Damage', power: 'Power', ko: 'KO %', koChance: 'KO chance', selectMove: 'Select move', battleMode: 'Battle mode', preset: 'UI preset', allRolls: 'All rolls', critical: 'Critical', spread: 'Spread', details: 'Details', calculator: 'Damage calculator', builder: 'Team builder', formatWarning: 'Format legality: informational', statHint: '0–32 per stat · 66 total', turns: 'turns', sun: 'Harsh sunlight', sunUnavailable: 'Coming soon', off: 'off', howItWorks: 'How it works', accuracyNote: 'Displayed values are interface presets while the server-side engine is connected.',
+    team: 'Team', attacker: 'Attacker', defender: 'Defender', attackerSlot: 'Attacker slot', defenderSlot: 'Defender slot', setup: 'Active set', route: 'Matchup route', outcomes: 'Move outcomes', field: 'Field & conditions', format: 'Champions · Regulation M-B', language: 'English', languageLabel: 'Language', formatLabel: 'Format', primaryNav: 'Primary navigation', inspectorOptions: 'Inspector options (coming soon)', save: 'Save team', saved: 'Saved', teamFull: 'Team full', autoSave: 'Manual local save', demoRoster: 'Demo roster · temporary scenario', level: 'Level', tera: 'Tera type', item: 'Held item', ability: 'Ability', nature: 'Nature', statPoints: 'Stat Points', moves: 'Moves', add: 'Add Pokémon', fieldTerrain: 'Electric Terrain', fieldReflect: 'Reflect', weather: 'Weather', terrain: 'Terrain', clear: 'No weather', rain: 'Rain', sand: 'Sandstorm', snow: 'Snow', terrainNone: 'No terrain', grassyTerrain: 'Grassy Terrain', psychicTerrain: 'Psychic Terrain', mistyTerrain: 'Misty Terrain', screens: 'Screens & protection', speedSpace: 'Speed & space', lightScreen: 'Light Screen', auroraVeil: 'Aurora Veil', safeguard: 'Safeguard', tailwind: 'Tailwind', trickRoom: 'Trick Room', gravity: 'Gravity', activeEffects: 'active effects', fieldSummary: 'Simulation state', primary: 'Primary result', versus: 'vs', damage: 'Damage', power: 'Power', ko: 'KO %', koChance: 'KO chance', selectMove: 'Select move', battleMode: 'Battle mode', preset: 'UI preset', allRolls: 'All rolls', critical: 'Critical', spread: 'Spread', details: 'Details', calculator: 'Damage calculator', builder: 'Team builder', formatWarning: 'Format legality: informational', statHint: '0–32 per stat · 66 total', turns: 'turns', sun: 'Harsh sunlight', sunUnavailable: 'Coming soon', off: 'off', howItWorks: 'How it works', accuracyNote: 'Displayed values are interface presets while the server-side engine is connected.', newTeam: 'New team', teamName: 'Team name', emptySlot: 'Empty slot', addPokemon: 'Add Pokémon', searchPokemon: 'Search Pokémon', catalog: 'Pokémon catalog', selectSlot: 'Select a slot', emptyBuilderHelp: 'Choose a Pokémon from the catalog to start building your team.', removePokemon: 'Remove Pokémon', choosePokemon: 'Choose Pokémon', moveHint: 'Choose one move for each slot', catalogHint: 'Data available for the Champions prototype', noResults: 'No Pokémon found', savedLocally: 'Saved in browser', emptyTeam: 'No Pokémon in team',
   },
 } as const;
 
@@ -163,7 +192,7 @@ function SelectControl({ label, value, options, onChange }: { label: string; val
 
 function TopBar({ locale, setLocale, copyForLocale, activePath, saved, onSave, showSave }: { locale: Locale; setLocale: (locale: Locale) => void; copyForLocale: (typeof copy)[Locale]; activePath: string; saved: boolean; onSave: () => void; showSave: boolean }) {
   return <header className="topbar">
-    <div className="brand-lockup"><span className="brand-mark" aria-hidden="true"><Map size={20} strokeWidth={2.8} /></span><div><div className="brand-name">VGC Forge</div><div className="brand-subtitle">Matchup Field Map</div></div></div>
+    <div className="brand-lockup"><span className="brand-mark" aria-hidden="true"><Map size={20} strokeWidth={2.8} /></span><div><div className="brand-name">VGC Forge</div><div className="brand-subtitle">{activePath === '/' ? (locale === 'it' ? 'Team builder Champions' : 'Champions team builder') : (locale === 'it' ? 'Mappa matchup' : 'Matchup field map')}</div></div></div>
     <nav className="topbar-nav" aria-label={copyForLocale.primaryNav}><Link aria-current={activePath === '/' ? 'page' : undefined} className={`nav-item ${activePath === '/' ? 'nav-item-active' : ''}`} href="/"><Swords size={15} /> {copyForLocale.builder}</Link><Link aria-current={activePath === '/calculator' ? 'page' : undefined} className={`nav-item ${activePath === '/calculator' ? 'nav-item-active' : ''}`} href="/calculator"><Crosshair size={15} /> {copyForLocale.calculator}</Link></nav>
     <div className="topbar-actions"><label className="format-select"><span className="format-dot" aria-hidden="true" /><select value={copyForLocale.format} aria-label={copyForLocale.formatLabel} disabled><option>{copyForLocale.format}</option></select><ChevronDown size={15} aria-hidden="true" /></label><fieldset className="locale-toggle" aria-label={copyForLocale.languageLabel}><Globe2 size={15} aria-hidden="true" /><button type="button" aria-pressed={locale === 'it'} className={locale === 'it' ? 'locale-active' : ''} onClick={() => setLocale('it')}>IT</button><span>/</span><button type="button" aria-pressed={locale === 'en'} className={locale === 'en' ? 'locale-active' : ''} onClick={() => setLocale('en')}>EN</button></fieldset>{showSave && <button className="save-button" type="button" onClick={onSave}><Save size={16} /> {saved ? copyForLocale.saved : copyForLocale.save}</button>}</div>
   </header>;
@@ -242,7 +271,7 @@ function TeamRail({ selectedIndex, setSelectedIndex, copyForLocale }: { selected
   return <aside className="team-rail"><div className="team-rail-heading"><div><h2>{copyForLocale.team}</h2><p>Regulation M-B</p></div><span className="team-count">6 / 6</span></div><div className="team-slots">{team.map((pokemon, index) => <button type="button" aria-pressed={selectedIndex === index} className={`team-slot ${selectedIndex === index ? 'team-slot-active' : ''}`} onClick={() => setSelectedIndex(index)} key={pokemon.name}><span className="slot-number">{index + 1}</span><span className="slot-copy"><strong>{pokemon.name}</strong><small>{roleLabel(pokemon.role, locale)}</small></span><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span></button>)}</div><button type="button" className="add-button" disabled title={copyForLocale.teamFull}><Plus size={16} /> {copyForLocale.add}</button><div className="team-rail-foot"><span className="status-dot" /> {copyForLocale.autoSave} · v0.1</div></aside>;
 }
 
-export default function Home({ standalone = false }: { standalone?: boolean }) {
+function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
   const [savedWorkspace] = useState<Partial<{ locale: Locale; mode: Mode; attackerIndex: number; defenderIndex: number; fieldState: FieldState; sets: Record<string, PokemonSet> }>>(() => {
     try {
       if (typeof window === 'undefined') return {};
@@ -313,4 +342,103 @@ export default function Home({ standalone = false }: { standalone?: boolean }) {
          FINISH: one restrained state transition, responsive stacking, keyboard-visible controls, no decorative gradients. */}
     <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath={pathname === '/calculator' ? '/calculator' : '/'} saved={saved} onSave={saveWorkspace} showSave={!standalone} /><div className="format-banner"><CircleAlert size={14} /><span>{copyForLocale.formatWarning}{standalone ? ` · ${copyForLocale.demoRoster}` : ''}</span><button type="button" aria-pressed={showHelp} aria-expanded={showHelp} aria-controls="help-callout" onClick={() => setShowHelp(!showHelp)}>{copyForLocale.howItWorks}</button></div>{showHelp && <div className="help-callout" id="help-callout"><Info size={14} /><span>{locale === 'it' ? (standalone ? 'Scegli attaccante e difensore dal roster demo, configura il set attivo e seleziona una mossa: lo scenario non viene salvato.' : 'Scegli un Pokémon dal rail, modifica Stat Points e seleziona una mossa: il route e la matrice si aggiornano insieme.') : (standalone ? 'Choose an attacker and defender from the demo roster, tune the active set, and select a move: this scenario is not saved.' : 'Choose a Pokémon from the rail, tune Stat Points, and select a move: the route and matrix stay in sync.')}</span></div>}<div className={`workspace-grid ${standalone ? 'workspace-grid-standalone' : ''}`}><SetupInspector copyForLocale={copyForLocale} selected={attacker} activeSet={activeSet} activeMoves={activeMoves} setActiveSet={setActiveSet} selectedMoveIndex={selectedMoveIndex} setSelectedMoveIndex={setSelectedMoveIndex} /><div className="main-column"><MatchupRoute copyForLocale={copyForLocale} attacker={attacker} defender={defender} attackerSet={activeSet} defenderSet={defenderSet} attackerIndex={attackerIndex} defenderIndex={defenderIndex} setAttackerIndex={setAttackerIndex} setDefenderIndex={setDefenderIndex} mode={mode} setMode={setMode} activeMoves={activeMoves} selectedMoveIndex={selectedMoveIndex} setSelectedMoveIndex={setSelectedMoveIndex} fieldState={fieldState} setFieldState={setFieldState} fieldSummary={activeFieldSummary} /><OutcomesMatrix copyForLocale={copyForLocale} defender={defender} detailsOpen={detailsOpen} setDetailsOpen={setDetailsOpen} activeMoves={activeMoves} selectedMoveIndex={selectedMoveIndex} fieldSummary={activeFieldSummary} /></div>{!standalone && <TeamRail selectedIndex={attackerIndex} setSelectedIndex={setAttackerIndex} copyForLocale={copyForLocale} />}</div><div className="mobile-context" aria-live="polite"><span>{copyForLocale.defender}: {selectedTarget.name}</span><span>·</span><span>{copyForLocale.ko} {selectedMove.ko} · {copyForLocale.preset}</span></div>
   </main>;
+}
+
+function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, onUpdate, onRemove }: { copyForLocale: (typeof copy)[Locale]; locale: Locale; pokemon: Pokemon; slot: BuilderSlot & { pokemonName: string; set: PokemonSet }; onUpdate: (patch: Partial<PokemonSet>) => void; onRemove: () => void }) {
+  const { set } = slot;
+  const derivedStats = deriveStats(pokemon, set);
+  const statEntries = [['HP', 'hp'], ['Atk', 'atk'], ['Def', 'def'], ['Sp. Atk', 'spa'], ['Sp. Def', 'spd'], ['Speed', 'spe']] as const;
+  const moveOptions = Object.values(moveCatalog).map((move) => move.name);
+  const updateStat = (key: StatKey, value: number) => onUpdate({ statPoints: clampStatPoints({ ...set.statPoints, [key]: value }, key) });
+  const updateMove = (index: number, value: string) => onUpdate({ moves: set.moves.map((move, moveIndex) => moveIndex === index ? value : move) });
+
+  return <div className="builder-editor-content">
+    <div className="builder-editor-heading">
+      <div>
+        <p className="builder-section-kicker">{copyForLocale.setup}</p>
+        <h1>{pokemon.name}</h1>
+        <div className="tag-row">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</div>
+      </div>
+      <button type="button" className="builder-remove" onClick={onRemove}>{copyForLocale.removePokemon}</button>
+    </div>
+    <div className="builder-control-grid">
+      <SelectControl label={copyForLocale.tera} value={set.tera} onChange={(value) => onUpdate({ tera: value })} options={['Normal', 'Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Ghost', 'Fairy', 'Dark']} />
+      <SelectControl label={copyForLocale.item} value={set.item} onChange={(value) => onUpdate({ item: value })} options={['Choice Specs', 'Safety Goggles', 'Focus Sash', 'Assault Vest', 'Rocky Helmet', 'Mental Herb', 'Booster Energy']} />
+      <SelectControl label={copyForLocale.ability} value={set.ability} onChange={(value) => onUpdate({ ability: value })} options={['Protosynthesis', 'Intimidate', 'Grassy Surge', 'Unseen Fist', 'Regenerator', 'Armor Tail']} />
+      <SelectControl label={copyForLocale.nature} value={set.nature} onChange={(value) => onUpdate({ nature: value })} options={['Timid (+Spe, -Atk)', 'Modest (+SpA, -Atk)', 'Careful (+SpD, -SpA)', 'Adamant (+Atk, -SpA)', 'Jolly (+Spe, -SpA)', 'Bold (+Def, -Atk)', 'Quiet (+SpA, -Spe)']} />
+    </div>
+    <div className="builder-divider" />
+    <div className="builder-section-heading"><div><h2>{copyForLocale.statPoints}</h2><p>{copyForLocale.statHint}</p></div><strong>{Object.values(set.statPoints).reduce((sum, value) => sum + value, 0)} / 66</strong></div>
+    <div className="builder-stat-grid">{statEntries.map(([label, key]) => <label className="builder-stat-row" key={key}><span>{label}</span><input type="number" min={0} max={32} value={set.statPoints[key]} aria-label={`${label} Stat Points`} onChange={(event) => updateStat(key, Number(event.target.value))} /><input type="range" min={0} max={32} value={set.statPoints[key]} aria-label={`${label} Stat Points slider`} onChange={(event) => updateStat(key, Number(event.target.value))} /><b>{derivedStats[key]}</b></label>)}</div>
+    <div className="builder-divider" />
+    <div className="builder-section-heading"><div><h2>{copyForLocale.moves}</h2><p>{copyForLocale.moveHint}</p></div><span>4 / 4</span></div>
+    <div className="builder-move-grid">{set.moves.map((move, index) => <label className="builder-move-field" key={`${index}-${move}`}><span>{index + 1}</span><span className="select-wrap"><select value={move} aria-label={`${copyForLocale.moves} ${index + 1}`} onChange={(event) => updateMove(index, event.target.value)}>{moveOptions.map((option) => <option key={option}>{option}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>)}</div>
+  </div>;
+}
+
+function BuilderWorkspace() {
+  const [locale, setLocale] = useState<Locale>('it');
+  const [teamName, setTeamName] = useState('');
+  const [slots, setSlots] = useState<BuilderSlot[]>(() => Array.from({ length: 6 }, () => null));
+  const [selectedSlot, setSelectedSlot] = useState(0);
+  const [query, setQuery] = useState('');
+  const [saved, setSaved] = useState(false);
+  const copyForLocale = copy[locale];
+  const selected = slots[selectedSlot];
+  const takenNames = new Set(slots.filter((slot, index) => slot && index !== selectedSlot).map((slot) => slot?.pokemonName));
+  const visibleCatalog = pokemonCatalog.filter((pokemon) => !takenNames.has(pokemon.name) && pokemon.name.toLowerCase().includes(query.trim().toLowerCase()));
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = JSON.parse(window.localStorage.getItem('vgc-forge:builder-v1') ?? '{}') as { locale?: Locale; teamName?: string; slots?: BuilderSlot[]; selectedSlot?: number };
+        if (stored.locale === 'en') setLocale('en');
+        if (typeof stored.teamName === 'string') setTeamName(stored.teamName);
+        if (Array.isArray(stored.slots)) setSlots(restoreBuilderSlots(stored.slots));
+        if (typeof stored.selectedSlot === 'number' && stored.selectedSlot >= 0 && stored.selectedSlot < 6) setSelectedSlot(stored.selectedSlot);
+      } catch {
+        // Ignore malformed local drafts and keep a clean six-slot builder.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => { document.documentElement.lang = locale; }, [locale]);
+
+  const updateSlot = (patch: Partial<PokemonSet>) => {
+    setSlots((current) => current.map((slot, index) => index === selectedSlot && slot ? { ...slot, set: { ...slot.set, ...patch } } : slot));
+  };
+  const choosePokemon = (pokemonName: string) => {
+    if (takenNames.has(pokemonName)) return;
+    const pokemon = pokemonCatalog.find((entry) => entry.name === pokemonName);
+    if (!pokemon) return;
+    setSlots((current) => current.map((slot, index) => index === selectedSlot ? { pokemonName, set: cloneSet(defaultSets[pokemonName]) } : slot));
+    setQuery('');
+  };
+  const addPokemon = () => {
+    const emptyIndex = slots.findIndex((slot) => !slot);
+    if (emptyIndex >= 0) setSelectedSlot(emptyIndex);
+  };
+  const removePokemon = () => {
+    setSlots((current) => current.map((slot, index) => index === selectedSlot ? null : slot));
+    setQuery('');
+  };
+  const saveBuilder = () => {
+    window.localStorage.setItem('vgc-forge:builder-v1', JSON.stringify({ locale, teamName, slots, selectedSlot }));
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 1800);
+  };
+
+  return <main className="forge-shell builder-shell">
+    <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath="/" saved={saved} onSave={saveBuilder} showSave />
+    <div className="format-banner"><CircleAlert size={14} /><span>{copyForLocale.formatWarning}</span><span className="builder-save-note">{saved ? copyForLocale.savedLocally : copyForLocale.autoSave}</span></div>
+    <section className="builder-header"><div><h1>{teamName || copyForLocale.newTeam}</h1><p>{copyForLocale.format} · {slots.filter(Boolean).length} / 6</p></div><label className="builder-name-field"><span>{copyForLocale.teamName}</span><input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder={copyForLocale.newTeam} /></label></section>
+    <div className="builder-grid">
+      <aside className="builder-roster" aria-label={copyForLocale.team}><div className="builder-roster-heading"><div><h2>{copyForLocale.team}</h2><p>{copyForLocale.catalogHint}</p></div><strong>{slots.filter(Boolean).length} / 6</strong></div><div className="builder-slots">{slots.map((slot, index) => { const pokemon = slot ? pokemonCatalog.find((entry) => entry.name === slot.pokemonName) : null; return <button type="button" key={index} aria-pressed={selectedSlot === index} className={`builder-slot ${selectedSlot === index ? 'builder-slot-active' : ''} ${slot ? '' : 'builder-slot-empty'}`} onClick={() => setSelectedSlot(index)}><span className="builder-slot-number">{index + 1}</span>{pokemon ? <span className="builder-slot-copy"><strong>{pokemon.name}</strong><small>{roleLabel(pokemon.role, locale)}</small><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span></span> : <span className="builder-slot-copy"><strong>{copyForLocale.emptySlot}</strong><small>{copyForLocale.addPokemon}</small></span>}</button>; })}</div><button type="button" className="add-button" onClick={addPokemon} disabled={slots.every(Boolean)}><Plus size={16} /> {copyForLocale.addPokemon}</button></aside>
+      <section className="builder-editor" aria-live="polite">{selected ? <BuilderSetEditor copyForLocale={copyForLocale} locale={locale} pokemon={pokemonCatalog.find((entry) => entry.name === selected.pokemonName)!} slot={selected} onUpdate={updateSlot} onRemove={removePokemon} /> : <div className="builder-empty-state"><div className="builder-empty-icon"><Plus size={22} /></div><h2>{copyForLocale.selectSlot}</h2><p>{copyForLocale.emptyBuilderHelp}</p><label className="builder-search"><span>{copyForLocale.searchPokemon}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copyForLocale.searchPokemon} /></label><div className="catalog-heading"><h2>{copyForLocale.catalog}</h2><span>{visibleCatalog.length}</span></div><div className="catalog-list">{visibleCatalog.map((pokemon) => <button type="button" className="catalog-option" key={pokemon.name} onClick={() => choosePokemon(pokemon.name)}><span className="pokemon-monogram">{pokemon.name.slice(0, 2).toUpperCase()}</span><span><strong>{pokemon.name}</strong><small>{roleLabel(pokemon.role, locale)}</small></span><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span><ArrowRight size={16} aria-hidden="true" /></button>)}{visibleCatalog.length === 0 && <p className="catalog-empty">{copyForLocale.noResults}</p>}</div></div>}</section>
+    </div>
+  </main>;
+}
+
+export default function Home({ standalone = false }: { standalone?: boolean }) {
+  return standalone ? <CalculatorWorkspace standalone /> : <BuilderWorkspace />;
 }

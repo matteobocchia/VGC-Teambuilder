@@ -15,17 +15,17 @@ const geistMono = Geist_Mono({
 const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
 
 export const metadata: Metadata = {
-  title: 'VGC Forge · Matchup Field Map',
-  description: 'Team builder e damage calculator per Pokémon Champions, con preset Regulation M-B.',
+  title: 'VGC Forge · Champions Team Builder',
+  description: 'Team builder e damage calculator per Pokémon Champions, con supporto iniziale Regulation M-B.',
   openGraph: {
-    title: 'VGC Forge · Matchup Field Map',
+    title: 'VGC Forge · Champions Team Builder',
     description: 'Build legal Champions teams and read matchup evidence.',
     type: 'website',
     images: [{ url: `${siteOrigin}/og.png`, width: 1200, height: 630, alt: 'VGC Forge Matchup Field Map' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'VGC Forge · Matchup Field Map',
+    title: 'VGC Forge · Champions Team Builder',
     description: 'Build legal Champions teams and read matchup evidence.',
     images: [`${siteOrigin}/og.png`],
   },
