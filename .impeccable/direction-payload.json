@@ -1,0 +1,131 @@
+{
+  "title": "Scegli il mondo visivo di Team Builder + Damage Calculator",
+  "question": "Quale linguaggio deve guidare il workspace competitivo di Pokémon Champions?",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Matchday Dossier",
+      "kicker": "THE ROLL",
+      "lineage": "annotated match sheets and technical scouting binders",
+      "thesis": "Ogni matchup è un dossier operativo: il team, il campo e il danno condividono la stessa pagina di lavoro.",
+      "palette": ["#111827", "#F4F0E8", "#E7B93E", "#D65A48"],
+      "materials": ["carbon paper", "tabbed folders", "red pencil marks"],
+      "viewport": "A split workbench: six roster tabs on the left, the selected Pokémon set in the center, and a damage matrix that can be opened without leaving the page.",
+      "risk": "Può sembrare cancelleria nostalgica se le annotazioni non diventano stati e interazioni reali.",
+      "raised": [
+        {
+          "from": "challenger-splitflap",
+          "raise": "Gli aggiornamenti del calcolo si muovono per celle discrete e leggibili, senza trasformare il risultato in una decorazione animata."
+        },
+        {
+          "from": "challenger-depot",
+          "raise": "Ogni cambio regolamento o scenario lascia una linguetta di revisione visibile, così la provenienza del dato non scompare nel flusso."
+        }
+      ],
+      "comp": ".impeccable/mocks/decision/assigned.webp"
+    },
+    {
+      "id": "model-pick",
+      "label": "Broadcast Control Room",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "tournament broadcast control rooms and replay desks",
+      "thesis": "Il matchup come regia: selezioni una mossa, il campo cambia e ogni camera mostra la stessa verità.",
+      "palette": ["#080B12", "#DDE7ED", "#55D6BE", "#FFB547"],
+      "materials": ["black monitor glass", "signal LEDs", "replay strips"],
+      "viewport": "A control rail of teams and formats feeds a central calculation canvas, with a compact replay strip for alternate moves.",
+      "risk": "È la direzione più familiare per un tool di analisi e richiede grande disciplina per non diventare una dashboard generica.",
+      "comp": ".impeccable/mocks/decision/model-pick.webp"
+    },
+    {
+      "id": "challenger-splitflap",
+      "label": "Split-Flap Match Board",
+      "verdict": "competitive",
+      "lineage": "rail concourse split-flap boards",
+      "thesis": "Le righe del matchup sono partenze: ogni cambio di scenario si annuncia con un aggiornamento leggibile.",
+      "palette": ["#0A0A0A", "#F4F2E9", "#F2B84B", "#D85546"],
+      "materials": ["matte flap faces", "painted glyphs", "amber row lamps"],
+      "viewport": "A strict matrix of move rows and target columns, with the selected result lit as the current departure.",
+      "case": "Vince sull'identificazione del dato live e dona una grammatica chiara agli aggiornamenti; perde parte della profondità del team builder.",
+      "risk": "Diventa una citazione retro se la griglia non resta semantica e navigabile.",
+      "comp": ".impeccable/mocks/decision/challenger-splitflap.webp",
+      "hero": "https://impeccable.style/worlds/cards/signals-instruments-split-flap-concourse-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/signals-instruments-split-flap-concourse.webp"
+    },
+    {
+      "id": "challenger-depot",
+      "label": "Revision Depot",
+      "verdict": "competitive",
+      "lineage": "depot blind courses and punched dispatch tapes",
+      "thesis": "Le versioni dei regolamenti scorrono come corsi di materiale: ogni stato resta visibile mentre il successivo entra in posizione.",
+      "palette": ["#173D2F", "#F0E8D8", "#F1C84A", "#22352E"],
+      "materials": ["dyed duck cloth", "punched tape", "bleached calico"],
+      "viewport": "A format strip anchors the workspace; team revisions and calculation releases step through one fixed window.",
+      "case": "Rende memorabile la riproducibilità e porta una grammatica forte agli stati; è meno immediato per scegliere Pokémon e mosse.",
+      "risk": "La metafora di revisione può prendere il sopravvento sul compito se la navigazione non resta diretta.",
+      "comp": ".impeccable/mocks/decision/challenger-depot.webp",
+      "hero": "https://impeccable.style/worlds/cards/operate-c-depot-blind-courses-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/operate-c-depot-blind-courses.webp"
+    },
+    {
+      "id": "challenger-map",
+      "label": "Matchup Field Map",
+      "verdict": "competitive",
+      "lineage": "zoo and gardens guide maps",
+      "thesis": "Ogni Pokémon occupa una zona del campo: i bordi tra le zone rivelano coperture, rischi e percorsi.",
+      "palette": ["#F5F1E4", "#2C2E2A", "#8ED462", "#FF705D"],
+      "materials": ["flat colour lobes", "coastline dividers", "folded guide stock"],
+      "viewport": "A matchup canvas where team members and field effects occupy clear regions, with the calculator opening at the coastline between attacker and target.",
+      "case": "Aiuta l'identificazione dei ruoli e rende il 2-vs-2 spaziale; rischia però di alleggerire troppo la precisione numerica.",
+      "risk": "La mappa può diventare un poster prima di diventare uno strumento.",
+      "comp": ".impeccable/mocks/decision/challenger-map.webp",
+      "hero": "https://impeccable.style/worlds/cards/aww2-zoo-gardens-guide-map-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/aww2-zoo-gardens-guide-map.webp"
+    },
+    {
+      "id": "challenger-generative",
+      "label": "Parametric Identity",
+      "verdict": "declined",
+      "lineage": "generative brand systems",
+      "thesis": "Ogni scenario rigenera il linguaggio visivo a partire dai propri parametri.",
+      "palette": ["#0B1220", "#8EF0C2", "#F7B3D0"],
+      "materials": ["parametric SVG", "seeded harmonies"],
+      "case": "Perde su chiarezza: il sistema non deve cambiare pelle mentre il giocatore deve confrontare numeri.",
+      "kept": "La relazione deterministica tra input e output diventa una regola di prodotto, non un effetto estetico."
+    },
+    {
+      "id": "challenger-cloud",
+      "label": "Iridescent Evidence",
+      "verdict": "declined",
+      "lineage": "cloud diffraction studies",
+      "thesis": "Ogni risultato si apre in una banda di evidenza e in una distribuzione di possibilità.",
+      "palette": ["#F8FAFC", "#334155", "#B9F2DE", "#E9B7D1"],
+      "materials": ["observation sheets", "spectral bands"],
+      "case": "Perde su identificazione: la metafora scientifica non appartiene alla scena di preparazione VGC.",
+      "kept": "Il risultato deve mostrare distribuzioni e incertezza in modo onesto, senza grafici ornamentali."
+    },
+    {
+      "id": "challenger-drawcord",
+      "label": "Tensioned Set",
+      "verdict": "declined",
+      "lineage": "drawcord garments and adjustable pattern pieces",
+      "thesis": "Una sola modifica tira il set fino a trovare il fit del matchup.",
+      "palette": ["#111111", "#D6B45C", "#6E7781"],
+      "materials": ["matte silk", "graphite stitching", "gold cord"],
+      "case": "Perde su chiarezza: il gesto di regolazione è utile, ma la metafora sartoriale non porta il dominio.",
+      "kept": "I controlli complessi devono avere tensione e rilascio leggibili, con stati intermedi espliciti."
+    }
+  ],
+  "reroll": { "registers": ["safer", "bolder"] },
+  "buildPath": { "value": "comp", "toggle": true },
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "Una dashboard pulita con sidebar, card e tabella, eseguita con precisione.",
+    "palette": ["#FFFFFF", "#111827", "#2563EB"],
+    "materials": ["clean grid", "neutral panels"],
+    "viewport": "Team a sinistra, dettaglio al centro, calculator a destra.",
+    "risk": "È comprensibile ma troppo simile a ogni altro tool di analisi.",
+    "comp": ".impeccable/mocks/decision/canon.webp"
+  },
+  "steer": true
+}

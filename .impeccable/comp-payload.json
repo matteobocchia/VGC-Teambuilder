@@ -1,0 +1,45 @@
+{
+  "title": "Approva la composizione di VGC Forge",
+  "question": "Quale composizione desktop vuoi usare come base per implementare la UI del Matchup Field Map?",
+  "options": [
+    {
+      "id": "comp-1",
+      "label": "Split workspace",
+      "kicker": "MAP CANVAS",
+      "lineage": "roster rail, matchup zones, detail drawer",
+      "thesis": "Il matchup è il centro operativo: roster, campo e inspector restano leggibili nello stesso viewport.",
+      "palette": ["#F5F1E4", "#2C2E2A", "#8ED462", "#5EB3E4", "#FF705D", "#F5C94A"],
+      "materials": ["flat colour lobes", "coastline dividers", "folded guide stock"],
+      "viewport": "Rotaia roster a sinistra, due zone organiche al centro, inspector e risultati a destra.",
+      "risk": "Molte colonne possono comprimere il dettaglio su viewport stretti.",
+      "comp": ".impeccable/mocks/comp-1.png"
+    },
+    {
+      "id": "comp-2",
+      "label": "Route + outcomes",
+      "kicker": "FIELD ROUTE",
+      "lineage": "attacker-to-defender route with fixed evidence table",
+      "thesis": "La relazione attaccante-difensore è una rotta continua; la tabella sotto conserva la precisione numerica.",
+      "palette": ["#F5F1E4", "#2C2E2A", "#8ED462", "#5EB3E4", "#FF705D", "#F5C94A"],
+      "materials": ["organic field zones", "coral move rail", "paper table rules"],
+      "viewport": "Command bar, team strip, mappa centrale con drawer laterale e tabella outcome full-width.",
+      "risk": "Il drawer laterale può assorbire attenzione rispetto al risultato principale.",
+      "comp": ".impeccable/mocks/comp-2.png"
+    },
+    {
+      "id": "comp-3",
+      "label": "Inspector + route",
+      "kicker": "EVIDENCE TABLE",
+      "lineage": "stacked setup inspector and comparison matrix",
+      "thesis": "Gli input del Pokémon sono sempre vicini; il percorso di calcolo porta rapidamente a una matrice comparabile.",
+      "palette": ["#F5F1E4", "#2C2E2A", "#8ED462", "#5EB3E4", "#FF705D", "#F5C94A"],
+      "materials": ["flat colour lobes", "route connector", "dense evidence rows"],
+      "viewport": "Inspector a sinistra, route matchup in alto, outcomes matrix ampia e team rail a destra.",
+      "risk": "La matrice è potente ma chiede attenzione per rimanere leggibile in italiano e inglese.",
+      "comp": ".impeccable/mocks/comp-3.png"
+    }
+  ],
+  "buildPath": { "value": "comp", "toggle": true },
+  "canon": false,
+  "steer": true
+}

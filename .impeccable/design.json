@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-02T00:00:00.000Z",
+  "title": "Design System: VGC Forge",
+  "extensions": {
+    "colorMeta": {
+      "paper": { "role": "neutral", "displayName": "Field-guide Paper", "canonical": "#F5F1E4", "tonalRamp": ["#292a27", "#4b4d47", "#6d6f67", "#8f9188", "#b1b2aa", "#d2d1c6", "#e7e3d6", "#fcfaf3"] },
+      "ink": { "role": "neutral", "displayName": "Map Ink", "canonical": "#22231F", "tonalRamp": ["#22231f", "#3f403b", "#5d5f58", "#7b7d74", "#999a92", "#b7b7ad", "#d5d3c8", "#f5f1e4"] },
+      "line": { "role": "neutral", "displayName": "Rule Ink", "canonical": "#2C2E2A", "tonalRamp": ["#2c2e2a", "#454741", "#5f625b", "#797c74", "#94968f", "#afb1a8", "#cbccc3", "#f0eee5"] },
+      "lime": { "role": "primary", "displayName": "Field-guide Lime", "canonical": "#C9EC52", "tonalRamp": ["#24320f", "#3d5519", "#587a23", "#739c2e", "#8fbd39", "#aad844", "#c9ec52", "#e7fb9d"] },
+      "lime-deep": { "role": "accent", "displayName": "Deep Lime", "canonical": "#4F761F", "tonalRamp": ["#1b280b", "#2b4312", "#3a5b19", "#4f761f", "#6c9430", "#8bad4c", "#b2ca84", "#e7f1d7"] },
+      "sky": { "role": "secondary", "displayName": "Matchup Sky", "canonical": "#95CFEE", "tonalRamp": ["#163040", "#24546d", "#347996", "#519bb8", "#72b4d0", "#95cfee", "#bee2f3", "#e8f6fc"] },
+      "coral": { "role": "primary", "displayName": "Route Coral", "canonical": "#FF705D", "tonalRamp": ["#4a1510", "#75231b", "#9c3125", "#bf4032", "#db513f", "#ff705d", "#ff9d8f", "#ffd0c9"] },
+      "focus": { "role": "accent", "displayName": "Accessible Focus", "canonical": "#8F2E20", "tonalRamp": ["#3d100b", "#5f1b13", "#8f2e20", "#b4402f", "#d85e4b", "#f27d69", "#ffab9d", "#ffd4cc"] },
+      "yellow": { "role": "secondary", "displayName": "Evidence Yellow", "canonical": "#F5C94A", "tonalRamp": ["#493a0e", "#705914", "#947719", "#b79625", "#d4b039", "#f5c94a", "#f9db7b", "#fdf1c6"] },
+      "muted": { "role": "neutral", "displayName": "Muted Ink", "canonical": "#5D5F58", "tonalRamp": ["#292a27", "#3f413d", "#5d5f58", "#797b73", "#96978f", "#b4b4aa", "#d2d0c5", "#efede4"] },
+      "line-soft": { "role": "neutral", "displayName": "Soft Rule", "canonical": "#D8D2C4", "tonalRamp": ["#3a3832", "#5d5a51", "#7e7a6e", "#9e9989", "#bcb7a9", "#d8d2c4", "#e7e3d8", "#f6f3eb"] },
+      "white": { "role": "neutral", "displayName": "Strong Paper", "canonical": "#FFFDF7", "tonalRamp": ["#3b3a35", "#68665e", "#908e83", "#b1aea1", "#cac6b8", "#dedacf", "#eeeae1", "#fffdf7"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Heavy grotesk", "purpose": "Product mark, matchup names, and panel headings." },
+      "body": { "displayName": "Compact grotesk", "purpose": "Controls, labels, table values, and helper copy." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "state-lift", "value": "transform 180ms ease-out", "purpose": "Small hover translation on interactive rows." },
+      { "name": "reduced-motion", "value": "prefers-reduced-motion: reduce", "purpose": "Disable authored movement for users who request reduced motion." }
+    ],
+    "breakpoints": [
+      { "name": "compact-grid", "value": "1320px" },
+      { "name": "tablet", "value": "850px" },
+      { "name": "phone", "value": "560px" }
+    ]
+  },
+  "components": [
+    { "name": "Primary Save Button", "kind": "button", "refersTo": "button-primary", "description": "Lime pill for saving the current anonymous draft.", "html": "<button class=\"ds-btn-primary\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 4h12l2 2v14H5zM8 4v5h8V4M8 20v-7h8v7\"/></svg>Save team</button>", "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:8px;border:1.5px solid var(--ink);border-radius:999px;padding:10px 15px;background:var(--lime);color:var(--ink);font:800 12px var(--font-body);transition:transform .18s ease-out}.ds-btn-primary:hover{transform:translateY(-1px)}.ds-btn-primary:focus-visible{outline:3px solid var(--coral);outline-offset:2px}.ds-btn-primary svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}" },
+    { "name": "Outline Action", "kind": "button", "refersTo": "button-secondary", "description": "Paper pill for secondary evidence actions.", "html": "<button class=\"ds-btn-secondary\">Details</button>", "css": ".ds-btn-secondary{border:1px solid var(--ink);border-radius:999px;padding:7px 10px;background:var(--white);color:var(--ink);font:800 10px var(--font-body)}.ds-btn-secondary:hover{background:var(--paper)}.ds-btn-secondary:focus-visible{outline:3px solid var(--coral);outline-offset:2px}" },
+    { "name": "Select Field", "kind": "input", "refersTo": "input-field", "description": "Compact select used for format, Tera type, item, ability, and nature.", "html": "<label class=\"ds-field\"><span>Tera type</span><select><option>Fairy</option></select></label>", "css": ".ds-field{display:grid;gap:5px;color:var(--muted);font:760 10px var(--font-body)}.ds-field select{border:1px solid var(--line-soft);border-radius:8px 6px 8px 6px;padding:8px 10px;background:var(--white);color:var(--ink);font:720 11px var(--font-body)}.ds-field select:focus-visible{outline:3px solid var(--focus);outline-offset:2px}" },
+    { "name": "Type Tag", "kind": "chip", "description": "Small outlined semantic tag for Pokémon and move types.", "html": "<span class=\"ds-chip ds-chip-fairy\">FAIRY</span>", "css": ".ds-chip{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:2px 6px;font:850 9px var(--font-body);letter-spacing:.03em;text-transform:uppercase}.ds-chip-fairy{color:var(--ink);background:#f7a8ca}" },
+    { "name": "Field State Chip", "kind": "chip", "description": "Toggle chip for weather, terrain, screens, and other field state.", "html": "<button class=\"ds-field-chip\" aria-pressed=\"true\">Electric Terrain <b>5</b><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m5 12 4 4L19 6\"/></svg></button>", "css": ".ds-field-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--ink);border-radius:9px 6px 8px 6px;padding:8px 10px;background:#fff2bd;color:var(--ink);font:800 10px var(--font-body)}.ds-field-chip:hover{background:#f9e6a0}.ds-field-chip:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.ds-field-chip svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2}" },
+    { "name": "Matchup Region", "kind": "custom", "description": "Stepped cartographic territory that holds attacker or defender setup data.", "html": "<section class=\"ds-region ds-region-lime\"><span>ATTACKER</span><strong>Flutter Mane</strong><small>GHOST · FAIRY</small></section>", "css": ".ds-region{display:grid;gap:10px;clip-path:polygon(3% 0,94% 0,100% 9%,100% 91%,94% 100%,6% 100%,0 91%,0 9%);padding:20px 24px;border:1.5px solid var(--ink);color:var(--ink)}.ds-region-lime{background:var(--lime)}.ds-region strong{font:850 27px/1 var(--font-display);letter-spacing:-.055em}.ds-region span{font:850 9px var(--font-body);letter-spacing:.05em}.ds-region small{font:760 10px var(--font-body)}" },
+    { "name": "KO Result", "kind": "custom", "description": "Yellow evidence badge for the selected move’s primary KO chance.", "html": "<output class=\"ds-ko\"><span>KO chance</span><strong>88%</strong><small>vs Incineroar</small></output>", "css": ".ds-ko{display:grid;justify-items:center;border:1.5px solid var(--ink);border-radius:12px 8px 11px 7px;padding:12px 10px 11px;background:var(--yellow);color:var(--ink);text-align:center}.ds-ko span{font:850 9px var(--font-body);text-transform:uppercase;letter-spacing:.06em}.ds-ko strong{font:850 39px/1 var(--font-display);letter-spacing:-.08em}.ds-ko small{margin-top:4px;font:760 9px var(--font-body)}" }
+  ],
+  "narrative": {
+    "northStar": "The Matchup Field Map",
+    "overview": "VGC Forge turns a Pokémon Champions matchup into a readable tactical map. The surface borrows the confidence of a folded field guide: cream stock, inked dividers, cartographic regions, and small colour-coded signals. The geometry is purposeful: attacker and defender zones, route connectors, and evidence rows make the calculation legible at a glance.\n\nThe tool is dense without feeling like a generic admin dashboard. Strong type, flat colour blocks, and explicit data labels keep the competitive task in front of the player. The confirmed anti-reference is the soft “puddle” silhouette; regions use stepped, angular coastlines instead.",
+    "keyCharacteristics": ["Cream guide-stock canvas with flat lime, sky, coral, and yellow signals.", "Crisp black ink borders and compact, high-contrast data typography.", "Cartographic panels are functional containers, never decoration."],
+    "rules": [
+      { "name": "The One Signal Rule", "body": "Colour blocks must indicate selection, matchup role, or evidence priority; never add a colour only to decorate an empty surface.", "section": "colors" },
+      { "name": "The Tight-But-Readable Rule", "body": "Keep tracking near -0.04em for headings, but never compress tabular values or explanatory copy.", "section": "typography" },
+      { "name": "The Flat Evidence Rule", "body": "If a value is important, give it a clear row, border, or colour role rather than a shadow.", "section": "elevation" }
+    ],
+    "dos": ["Do keep Pokémon names, move names, format, and KO evidence in the first viewport.", "Do use semantic controls and visible focus states for every editable value.", "Do preserve the 0–32 Stat Points / 66 total Champions constraint in copy and API metadata.", "Do keep locale strings in data maps so additional languages can be added without component rewrites."],
+    "donts": ["Don't use gradients, glassmorphism, ornamental shadows, or generic SaaS card stacks.", "Don't draw map regions as soft puddles; use stepped cartographic coastlines.", "Don't present illustrative damage values as verified engine output; label presets until the server-side engine is connected."]
+  }
+}
