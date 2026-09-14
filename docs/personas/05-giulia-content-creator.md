@@ -2,54 +2,36 @@
 
 ## Profilo
 
-- **Età indicativa:** 26 anni
-- **Esperienza:** buona; produce guide, video e post di analisi
-- **Lingua:** pubblica soprattutto in italiano, con una parte del pubblico internazionale
-- **Dispositivo:** desktop per preparare il contenuto, mobile per controllare un link
-- **Frequenza:** usa lo strumento quando prepara una nuova guida o una live
+- Produce guide, video e post di analisi in italiano, con pubblico anche internazionale.
+- Usa entrambe le lingue per preparare esempi e confrontare fonti.
+- Ha bisogno di link e schermate leggibili anche fuori dal suo contesto.
 
-## Contesto
+## Scenario
 
-Giulia deve trasformare un risultato tecnico in una spiegazione comprensibile. Le servono link stabili, etichette non ambigue e un modo per mostrare le condizioni che rendono vero un KO.
+Giulia deve trasformare un risultato tecnico in una spiegazione. Vuole mostrare quali set e condizioni rendono vero un KO, distinguendo dati ufficiali, calcolo e preset provvisori.
 
 ## Obiettivi
 
-1. Costruire un esempio leggibile senza esporre dati personali.
-2. Condividere uno scenario in sola lettura.
-3. Mostrare formato, release dati e condizioni insieme al risultato.
-4. Passare da italiano a inglese senza cambiare la logica dello scenario.
+- Preparare un esempio senza esporre dati personali.
+- Condividere uno scenario read-only completo.
+- Mostrare formato, release dati, set e campo vicino al risultato.
+- Scegliere la lingua prima di registrare o catturare la schermata.
 
-## Esigenza linguistica
+## Problemi da evitare
 
-Giulia produce contenuti italiani ma può pubblicare anche per un pubblico inglese. Ha bisogno di scegliere il locale prima di catturare o condividere un risultato, con nomenclatura ufficiale completa e senza cambiare i dati del matchup. Il link deve rendere esplicita la lingua visualizzata, lasciando al destinatario la possibilità di cambiarla.
-
-## Frizioni attuali da evitare
-
-- Nomi tradotti in modo incoerente nelle schermate o nei link condivisi.
-- Numeri preset che sembrano risultati ufficiali.
-- Link che perdono la mossa selezionata o lo stato del campo.
-- Layout troppo denso su viewport stretti.
-- Screenshot o link che mostrano un mix di lingue e rendono il contenuto difficile da citare.
+- Screenshot con label italiane e inglesi mescolate.
+- Numeri preset che sembrano risultati verificati.
+- Link che perdono mossa, campo o lingua.
+- Layout illeggibile su mobile.
 
 ## Flusso principale
 
-1. Prepara il team o lo scenario standalone.
+1. Prepara team o scenario standalone.
 2. Seleziona il caso didattico e la mossa principale.
-3. Imposta le condizioni di campo rilevanti.
-4. Verifica dettagli e nota di accuratezza.
-5. Condivide il link read-only o cattura la schermata.
+3. Imposta le condizioni rilevanti.
+4. Verifica nota di accuratezza e dettagli.
+5. Condivide il link o cattura la schermata nel locale scelto.
 
-## Criteri di successo
+## Successo
 
-- Chi apre il link vede lo stesso scenario senza doverlo ricostruire.
-- Preset e calcoli reali sono distinguibili a colpo d'occhio.
-- Le etichette restano complete anche in inglese.
-- Il layout è leggibile su desktop e mobile.
-
-## Requisiti prioritari
-
-- URL o snapshot condivisibile.
-- Copy e nomenclatura centralizzati.
-- Stato del campo serializzabile.
-- Avviso esplicito per risultati non ancora verificati dall'engine.
-- Copia IT/EN sottoposta a controllo prima della pubblicazione, inclusi testo alternativo e label accessibili.
+Chi apre il link vede lo stesso scenario, può cambiare lingua e distingue immediatamente preset, dati ufficiali e risultato del calcolo.

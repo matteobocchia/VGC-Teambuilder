@@ -2,60 +2,41 @@
 
 ## Profilo
 
-- **Età indicativa:** 35 anni
-- **Esperienza:** ingegnere software con competenza sulle meccaniche competitive
-- **Lingua:** inglese tecnico, con necessità di verificare l'italiano mostrato agli utenti
-- **Dispositivo:** desktop e strumenti di sviluppo
-- **Frequenza:** interviene a ogni nuova release dati o modifica del regolamento
+- È una figura interna: non usa un pannello admin nella v1.
+- Lavora in inglese tecnico, ma deve verificare ciò che viene mostrato agli utenti italiani.
+- Interviene a ogni release dati o modifica del regolamento.
 
-## Contesto
+## Scenario
 
-Andrea non è un utente della UI v1 con pannello admin. È una persona interna che mantiene release, formule, compatibilità e regole multi-formato. La sua persona serve a evitare che una scorciatoia di frontend diventi una regola implicita.
+Andrea mantiene il backend multi-formato, le formule, la compatibilità e le release versionate. Serve a impedire che una scorciatoia del frontend diventi una regola implicita.
 
 ## Obiettivi
 
-1. Versionare formati, regole e dati senza perdere la riproducibilità.
-2. Separare i dati indipendenti dalla lingua dalle stringhe UI.
-3. Aggiungere un nuovo formato senza riscrivere team builder e calculator.
-4. Verificare formule, compatibilità, cap Champions e casi limite con test golden.
-5. Sapere quale release dati ha prodotto ogni risultato condiviso.
+- Versionare formati, regole e dati senza perdere la riproducibilità.
+- Separare identificatori canonici, label italiane/inglesi e copy UI.
+- Aggiungere un formato futuro senza duplicare il codice.
+- Verificare cap Champions, compatibilità, statistiche derivate e danno.
+- Sapere quale release ha prodotto ogni risultato condiviso.
 
-## Esigenza linguistica
+## Problemi da evitare
 
-Andrea deve separare tre livelli: identificatore canonico lingua-indipendente, catalogo di label ufficiali per locale e copy applicativo. Una release di regole non può richiedere modifiche ai componenti React per aggiungere IT o EN. Il catalogo deve poter dichiarare una traduzione mancante e applicare il fallback inglese senza inventare termini.
-
-## Frizioni attuali da evitare
-
-- Regole hard-coded nei componenti React.
-- Dati mostrati in una lingua diversa da quella selezionata.
-- Nome visualizzato che non corrisponde all'identificatore canonico.
+- Regole o formule hard-coded nei componenti React.
+- Nome visualizzato diverso dall’identificatore canonico.
+- Fallback linguistici inventati o schermate miste.
 - Risultato non tracciabile fino a formato e release dati.
-- Stringhe duplicate nei componenti o fallback silenziosi che producono viste miste.
 
 ## Flusso principale
 
 1. Importa o aggiorna una release versionata.
-2. Applica il ruleset Champions e i profili futuri senza alterare quelli storici.
-3. Esegue test di compatibilità, statistiche derivate e danno.
-4. Pubblica la release per il backend.
-5. Verifica che il frontend mostri solo label provenienti dal catalogo locale corretto.
+2. Applica il profilo Champions senza alterare quelli storici.
+3. Esegue fixture ufficiali e test golden.
+4. Pubblica la release per le API.
+5. Verifica che il frontend usi il catalogo IT/EN corretto.
 
-## Criteri di successo
+## Successo
 
-- Un calcolo può essere riprodotto usando gli stessi input e la stessa release.
-- I componenti non decidono autonomamente legalità o nomenclatura.
-- Un nuovo formato è un profilo dati/regole, non una copia del codice.
-- Ogni errore di importazione viene restituito con un elenco azionabile.
-- I test rilevano label mancanti, chiavi duplicate, mix di locale e `html lang` incoerente.
+Lo stesso input produce lo stesso risultato con la stessa release; un nuovo formato è un profilo dati/regole e non una copia dei componenti.
 
-## Requisiti prioritari
+## Fuori perimetro
 
-- PostgreSQL come fonte canonica con JSONB per i profili formato.
-- API versionate e identificatori lingua-indipendenti.
-- Test golden e fixture ufficiali.
-- Audit trail di release e calcoli.
-- Cataloghi IT/EN versionati separatamente dai dati di dominio.
-
-## Fuori perimetro immediato
-
-Il pannello admin, i permessi e l'autenticazione non fanno parte della v1. L'architettura deve però lasciare spazio a questi strumenti senza spostare la logica nel client.
+Autenticazione, permessi e pannello admin possono arrivare in futuro, ma non fanno parte della UI v1.
