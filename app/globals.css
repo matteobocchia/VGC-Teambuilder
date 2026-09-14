@@ -116,6 +116,9 @@ h1, h2 { font-family: var(--font-display); letter-spacing: -0.04em; }
 .route-title-row { align-items: center; padding: 2px 3px 14px; }
 .route-title-row h2 { font-size: 20px; }
 .route-title-row p { margin-top: 5px; }
+.matchup-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 3px 12px; }
+.matchup-selectors .control-field { grid-template-columns: 96px minmax(0, 1fr); }
+.workspace-grid-standalone { grid-template-columns: 300px minmax(0, 1fr); max-width: 1380px; }
 .mode-toggle, .segmented { gap: 3px; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--white); }
 .mode-toggle button, .segmented button { border: 0; border-radius: 999px; padding: 6px 10px; background: transparent; color: var(--muted); font-size: 10px; font-weight: 850; }
 .mode-toggle .mode-active, .segmented .segmented-active { background: var(--ink); color: var(--white); }
@@ -224,6 +227,7 @@ td strong { font-size: 11px; }
   .team-slots { grid-template-columns: repeat(3, 1fr); }
   .add-button { width: auto; min-width: 190px; }
   .team-rail-foot { display: none; }
+  .workspace-grid-standalone { grid-template-columns: 270px minmax(0, 1fr); }
 }
 
 @media (max-width: 850px) {
@@ -237,6 +241,7 @@ td strong { font-size: 11px; }
   .save-button svg { width: 17px; height: 17px; }
   .format-banner { padding: 8px 16px; }
   .workspace-grid { grid-template-columns: 1fr; padding: 16px; }
+  .workspace-grid-standalone { grid-template-columns: 1fr; }
   .setup-inspector { order: 1; }
   .main-column { order: 2; }
   .team-rail { order: 3; }
@@ -272,6 +277,7 @@ td strong { font-size: 11px; }
   .field-panel { padding: 11px; }
   .field-option-row-weather, .field-option-row-terrain { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .field-option { justify-content: flex-start; }
+  .matchup-selectors { grid-template-columns: 1fr; }
   .outcomes-heading { align-items: flex-start; gap: 12px; }
   .outcomes-actions { flex-direction: column; align-items: flex-end; }
   .team-slots { grid-template-columns: 1fr; }
