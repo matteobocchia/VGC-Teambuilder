@@ -19,12 +19,17 @@ Giulia deve trasformare un risultato tecnico in una spiegazione comprensibile. L
 3. Mostrare formato, release dati e condizioni insieme al risultato.
 4. Passare da italiano a inglese senza cambiare la logica dello scenario.
 
+## Esigenza linguistica
+
+Giulia produce contenuti italiani ma può pubblicare anche per un pubblico inglese. Ha bisogno di scegliere il locale prima di catturare o condividere un risultato, con nomenclatura ufficiale completa e senza cambiare i dati del matchup. Il link deve rendere esplicita la lingua visualizzata, lasciando al destinatario la possibilità di cambiarla.
+
 ## Frizioni attuali da evitare
 
 - Nomi tradotti in modo incoerente nelle schermate o nei link condivisi.
 - Numeri preset che sembrano risultati ufficiali.
 - Link che perdono la mossa selezionata o lo stato del campo.
 - Layout troppo denso su viewport stretti.
+- Screenshot o link che mostrano un mix di lingue e rendono il contenuto difficile da citare.
 
 ## Flusso principale
 
@@ -47,3 +52,4 @@ Giulia deve trasformare un risultato tecnico in una spiegazione comprensibile. L
 - Copy e nomenclatura centralizzati.
 - Stato del campo serializzabile.
 - Avviso esplicito per risultati non ancora verificati dall'engine.
+- Copia IT/EN sottoposta a controllo prima della pubblicazione, inclusi testo alternativo e label accessibili.

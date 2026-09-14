@@ -26,6 +26,27 @@ Per tutte le personas che usano un team, **set attivo** indica una singola confi
 
 Non sono accettabili valori rimasti dal Pokémon precedente, select che mostrano un valore ma salvano un altro campo, o un risultato che continua a descrivere un avversario diverso da quello visibile.
 
+## Invariante condivisa: lingua e nomenclatura
+
+La lingua selezionata è una proprietà dell'interfaccia, non del calcolo. Il dominio usa identificatori indipendenti dalla lingua e ogni schermata li presenta con il catalogo ufficiale corrispondente:
+
+- `it` mostra nomi italiani ufficiali quando esistono; `en` mostra i nomi inglesi ufficiali;
+- campi, meteo, mosse, abilità, strumenti, nature, ruoli, errori, helper text, intestazioni, tooltip e label ARIA seguono lo stesso locale;
+- non si alternano etichette tradotte e abbreviazioni inglesi nella stessa vista (`Campo Erboso` con `Grassy`, per esempio);
+- se una label ufficiale non è disponibile in italiano, il fallback è il nome canonico inglese esplicitamente mantenuto, mai una traduzione inventata;
+- cambiare lingua non modifica ID, set, regole, numeri o risultato del calcolo; cambia soltanto la loro presentazione;
+- il documento HTML, i controlli accessibili e gli stati di errore devono riflettere il locale corrente.
+
+Showdown resta un formato di import/export tecnico: i suoi identificatori inglesi vengono riconosciuti dal parser, ma la UI li visualizza nella lingua scelta. Un link condiviso conserva lo scenario e la release dati; chi lo apre può leggerlo in IT o EN senza ricalcolare un risultato diverso.
+
+### Checklist linguistica per ogni superficie
+
+1. Nessuna stringa visibile hard-coded fuori dal catalogo i18n.
+2. Nessun mix di italiano e inglese in un singolo gruppo di controlli.
+3. Nomi ufficiali completi per campi e condizioni (`Campo Elettrico`, `Campo Erboso`, `Campo Psichico`, `Campo Nebbioso`).
+4. Titoli, aria-label, focus order e messaggi di errore tradotti insieme al contenuto.
+5. Test di snapshot IT/EN per set attivo, calcolatore standalone e link condiviso.
+
 ## Decisioni di prodotto che emergono dalle personas
 
 1. Il contesto del formato e della release dati deve restare visibile durante ogni modifica.

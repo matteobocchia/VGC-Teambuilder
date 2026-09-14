@@ -20,12 +20,17 @@ Andrea non è un utente della UI v1 con pannello admin. È una persona interna c
 4. Verificare formule, compatibilità, cap Champions e casi limite con test golden.
 5. Sapere quale release dati ha prodotto ogni risultato condiviso.
 
+## Esigenza linguistica
+
+Andrea deve separare tre livelli: identificatore canonico lingua-indipendente, catalogo di label ufficiali per locale e copy applicativo. Una release di regole non può richiedere modifiche ai componenti React per aggiungere IT o EN. Il catalogo deve poter dichiarare una traduzione mancante e applicare il fallback inglese senza inventare termini.
+
 ## Frizioni attuali da evitare
 
 - Regole hard-coded nei componenti React.
 - Dati mostrati in una lingua diversa da quella selezionata.
 - Nome visualizzato che non corrisponde all'identificatore canonico.
 - Risultato non tracciabile fino a formato e release dati.
+- Stringhe duplicate nei componenti o fallback silenziosi che producono viste miste.
 
 ## Flusso principale
 
@@ -41,6 +46,7 @@ Andrea non è un utente della UI v1 con pannello admin. È una persona interna c
 - I componenti non decidono autonomamente legalità o nomenclatura.
 - Un nuovo formato è un profilo dati/regole, non una copia del codice.
 - Ogni errore di importazione viene restituito con un elenco azionabile.
+- I test rilevano label mancanti, chiavi duplicate, mix di locale e `html lang` incoerente.
 
 ## Requisiti prioritari
 
@@ -48,6 +54,7 @@ Andrea non è un utente della UI v1 con pannello admin. È una persona interna c
 - API versionate e identificatori lingua-indipendenti.
 - Test golden e fixture ufficiali.
 - Audit trail di release e calcoli.
+- Cataloghi IT/EN versionati separatamente dai dati di dominio.
 
 ## Fuori perimetro immediato
 

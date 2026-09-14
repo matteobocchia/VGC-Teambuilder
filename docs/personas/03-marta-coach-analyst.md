@@ -19,12 +19,17 @@ Marta non cerca solo il danno massimo. Confronta ruoli, condizioni di campo e so
 3. Vedere quali assunzioni hanno prodotto un risultato.
 4. Condividere un link read-only riproducibile con un giocatore.
 
+## Esigenza linguistica
+
+Marta lavora tra giocatori italiani e fonti internazionali. Deve poter preparare in IT, condividere in EN e lasciare invariati scenario, dati e risultati. La lingua del destinatario non deve essere codificata nel calcolo: il link deve risolvere gli stessi identificatori canonici e applicare il locale scelto dal lettore.
+
 ## Frizioni attuali da evitare
 
 - Risultati statici mentre cambiano attaccante, difensore o set.
 - Matrice che dichiara un bersaglio diverso dal route principale.
 - Condizioni di campo mostrate come un unico chip senza distinguere meteo, campo e protezioni.
 - Mancanza di release dati, formato o livello nel dettaglio condiviso.
+- Un report condiviso mescola nomi italiani, inglesi e abbreviazioni non spiegate.
 
 ## Flusso principale
 
@@ -41,6 +46,7 @@ Marta non cerca solo il danno massimo. Confronta ruoli, condizioni di campo e so
 - Ogni risultato include input e release dati sufficienti per essere riprodotto.
 - Le modifiche di un set non cambiano silenziosamente altri set o scenari.
 - La UI distingue dati ufficiali, risultati calcolati e preset provvisori.
+- Può verificare rapidamente che locale, label e aria-label siano coerenti nel link condiviso.
 
 ## Requisiti prioritari
 

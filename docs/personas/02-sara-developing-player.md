@@ -19,12 +19,17 @@ Sara sa scegliere una specie e una mossa, ma non conosce a memoria il significat
 3. Usare il calcolatore senza dover prima costruire un team completo.
 4. Leggere nomi e descrizioni coerenti nella lingua scelta.
 
+## Esigenza linguistica
+
+Sara usa l'italiano per imparare, ma può seguire una guida inglese. La traduzione deve aiutarla senza creare un vocabolario parallelo: campi, mosse, abilità, strumenti e messaggi di validazione devono avere nomi ufficiali e completi. Se una voce non ha una label italiana ufficiale, è preferibile mostrare il canonico inglese che inventare una traduzione.
+
 ## Frizioni attuali da evitare
 
 - Campi o mosse con traduzioni parziali che fanno dubitare della regola applicata.
 - Select che sembrano modificabili ma non aggiornano il set.
 - Statistiche finali non spiegate o rimaste fisse dopo la modifica.
 - Messaggi di errore che dicono solo che il set è invalido senza indicare tutti i problemi.
+- Label, aria-label o messaggi di errore che restano in inglese dopo aver scelto IT.
 
 ## Flusso principale
 
@@ -41,6 +46,7 @@ Sara sa scegliere una specie e una mossa, ma non conosce a memoria il significat
 - Vede la statistica finale derivata e il contributo della natura/Stat Points.
 - Può usare un calcolo ad hoc anche senza creare o salvare un team.
 - Non deve conoscere inglese per usare una UI italiana completa.
+- Il cambio lingua non cancella input e non modifica il risultato.
 
 ## Requisiti prioritari
 

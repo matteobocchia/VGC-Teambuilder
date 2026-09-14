@@ -20,11 +20,16 @@ Luca parte da un team di sei Pokémon e deve capire quali quattro portare in par
 4. Distinguere un risultato calcolato da un preset o da un dato non ancora disponibile.
 5. Confrontare varianti senza perdere il set di partenza.
 
+## Esigenza linguistica
+
+Luca prepara in italiano, ma riceve spesso paste Showdown, report e guide in inglese. Vuole poter passare a EN senza perdere la configurazione e senza mischiare i due vocabolari: il set può conservare gli identificatori tecnici importati, mentre la UI deve mostrare il nome ufficiale del locale scelto. Un link condiviso deve poter essere letto in inglese da un compagno senza cambiare lo scenario.
+
 ## Frizioni attuali da evitare
 
 - Il titolo dello slot mostra un Pokémon ma il set attivo appartiene a un altro.
 - Stat Points, statistiche finali, mosse e risultato KO non si aggiornano insieme.
 - Un campo viene chiamato con il nome completo e un altro con una scorciatoia non ufficiale.
+- La lingua cambia solo alcune label e lascia in italiano o inglese il resto del set.
 - Il formato è visibile in una schermata ma non nel contesto del risultato.
 
 ## Flusso principale
@@ -44,6 +49,7 @@ Luca parte da un team di sei Pokémon e deve capire quali quattro portare in par
 - La somma degli Stat Points non supera 66 e ogni statistica resta tra 0 e 32.
 - Il risultato mostra chiaramente attaccante, difensore, mossa, campo, formato e release dati.
 - Tornando a una variante precedente può riprodurre lo stesso risultato.
+- Passando IT → EN → IT ottiene gli stessi identificatori, numeri e risultati.
 
 ## Requisiti prioritari
 

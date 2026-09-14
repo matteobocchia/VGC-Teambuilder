@@ -19,12 +19,17 @@ Tommaso arriva con due Pokémon già scelti e vuole una risposta rapida: una mos
 3. Selezionare una mossa principale e vedere le altre in formato compatto.
 4. Ottenere un risultato riproducibile con gli input usati.
 
+## Esigenza linguistica
+
+Tommaso copia spesso nomi e set da calculator inglesi o da Showdown, ma può usare l'app in italiano dal telefono. Il parser deve accettare gli identificatori tecnici inglesi; la UI deve restituire label coerenti nel locale scelto e non deve trattare la lingua come una modifica al Pokémon o alla formula.
+
 ## Frizioni attuali da evitare
 
 - Obbligo di passare dal team builder per un test isolato.
 - Roster o slot che sovrascrivono i Pokémon inseriti manualmente.
 - Stato del campo non visibile nel risultato.
 - Confusione tra danno singolo, spread damage e probabilità di KO.
+- Input inglesi accettati ma risultato con metà label italiane e metà inglesi.
 
 ## Flusso principale
 
@@ -40,6 +45,7 @@ Tommaso arriva con due Pokémon già scelti e vuole una risposta rapida: una mos
 - Nessun team persistente è necessario.
 - Gli input manuali restano separati dai set salvati.
 - Il risultato dichiara chiaramente bersaglio, modalità, mossa e condizioni.
+- Passando lingua non cambia il calcolo e tutte le label del risultato, inclusi campi e condizioni, cambiano insieme.
 - Le alternative sono compatte ma non nascondono informazioni essenziali.
 
 ## Requisiti prioritari
