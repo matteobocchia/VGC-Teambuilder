@@ -11,6 +11,7 @@ Queste personas descrivono gli utenti che il prodotto deve servire e trasformano
 | [Marta](./03-marta-coach-analyst.md) | Coach / analista | Varianti, scenari e risultati | Primaria |
 | [Tommaso](./04-tommaso-standalone-calculator.md) | Utente del calcolatore standalone | Damage calculator | Primaria |
 | [Giulia](./05-giulia-content-creator.md) | Creator / divulgatrice | Risultati condivisibili | Secondaria |
+| [James](./07-james-english-competitive-player.md) | Giocatore competitivo English-first | Team builder + matchup | Primaria |
 | [Andrea](./06-andrea-rules-maintainer.md) | Manutentore dati e regole | Backend, release e tracciabilità | Interna / futura |
 
 ## Invariante condivisa: il set attivo
@@ -26,26 +27,11 @@ Per tutte le personas che usano un team, **set attivo** indica una singola confi
 
 Non sono accettabili valori rimasti dal Pokémon precedente, select che mostrano un valore ma salvano un altro campo, o un risultato che continua a descrivere un avversario diverso da quello visibile.
 
-## Invariante condivisa: lingua e nomenclatura
+## Copertura linguistica delle personas
 
-La lingua selezionata è una proprietà dell'interfaccia, non del calcolo. Il dominio usa identificatori indipendenti dalla lingua e ogni schermata li presenta con il catalogo ufficiale corrispondente:
+Le personas non sono tutte italiane: rappresentano anche chi arriva da fonti e community inglesi. Luca e Sara sono Italian-first; James è English-first; Marta, Tommaso e Giulia lavorano tra i due contesti. Questo serve a verificare lo stesso flusso da entrambi i punti di vista, non a duplicare il prodotto.
 
-- `it` mostra nomi italiani ufficiali quando esistono; `en` mostra i nomi inglesi ufficiali;
-- campi, meteo, mosse, abilità, strumenti, nature, ruoli, errori, helper text, intestazioni, tooltip e label ARIA seguono lo stesso locale;
-- non si alternano etichette tradotte e abbreviazioni inglesi nella stessa vista (`Campo Erboso` con `Grassy`, per esempio);
-- se una label ufficiale non è disponibile in italiano, il fallback è il nome canonico inglese esplicitamente mantenuto, mai una traduzione inventata;
-- cambiare lingua non modifica ID, set, regole, numeri o risultato del calcolo; cambia soltanto la loro presentazione;
-- il documento HTML, i controlli accessibili e gli stati di errore devono riflettere il locale corrente.
-
-Showdown resta un formato di import/export tecnico: i suoi identificatori inglesi vengono riconosciuti dal parser, ma la UI li visualizza nella lingua scelta. Un link condiviso conserva lo scenario e la release dati; chi lo apre può leggerlo in IT o EN senza ricalcolare un risultato diverso.
-
-### Checklist linguistica per ogni superficie
-
-1. Nessuna stringa visibile hard-coded fuori dal catalogo i18n.
-2. Nessun mix di italiano e inglese in un singolo gruppo di controlli.
-3. Nomi ufficiali completi per campi e condizioni (`Campo Elettrico`, `Campo Erboso`, `Campo Psichico`, `Campo Nebbioso`).
-4. Titoli, aria-label, focus order e messaggi di errore tradotti insieme al contenuto.
-5. Test di snapshot IT/EN per set attivo, calcolatore standalone e link condiviso.
+Per entrambe le lingue il set attivo deve restare lo stesso oggetto: cambia la label mostrata, non l'identificatore, la regola o il risultato. Un utente inglese deve vedere, per esempio, `Electric Terrain` e `Grassy Terrain` ovunque; un utente italiano deve vedere `Campo Elettrico` e `Campo Erboso`, senza etichette miste nella stessa schermata. Showdown può rimanere il formato tecnico inglese di import/export.
 
 ## Decisioni di prodotto che emergono dalle personas
 
