@@ -297,3 +297,19 @@ Una richiesta damage su release `provisional`/`unverified` non restituisce un `D
 ## Definition of done backend v1
 
 Il backend è pronto quando un utente anonimo può creare da zero una bozza di sei slot, ricevere solo combinazioni legalmente certificabili, importare/esportare una paste compatibile, scegliere un Pokémon arbitrario nel calculator, impostare pioggia/sole/terreno/schermi per il lato corretto e ottenere un risultato server-side riproducibile. In produzione questo risultato deve provenire da una coppia certificata `dataReleaseId` + `mechanicsVersion`; in assenza di tale coppia l'API deve rifiutare la richiesta dichiarando il motivo.
+
+## GitHub execution plan
+
+Le attività operative sono tracciate nelle issue del repository e vanno eseguite in questo ordine:
+
+1. [#1 PostgreSQL canonical repository e release immutabili](https://github.com/matteobocchia/VGC-Teambuilder/issues/1)
+2. [#2 Release Champions M-B verificata](https://github.com/matteobocchia/VGC-Teambuilder/issues/2)
+3. [#4 Catalogo e legalità server-side](https://github.com/matteobocchia/VGC-Teambuilder/issues/4)
+4. [#5 Persistenza revisioni e condivisione read-only](https://github.com/matteobocchia/VGC-Teambuilder/issues/5)
+5. [#6 Import/export Showdown e conversione Stat Points](https://github.com/matteobocchia/VGC-Teambuilder/issues/6)
+6. [#3 Damage engine Champions](https://github.com/matteobocchia/VGC-Teambuilder/issues/3)
+7. [#7 Integrazione frontend/API](https://github.com/matteobocchia/VGC-Teambuilder/issues/7)
+8. [#8 Test golden, contract, E2E e release gate](https://github.com/matteobocchia/VGC-Teambuilder/issues/8)
+9. [#9 Hardening production e deploy](https://github.com/matteobocchia/VGC-Teambuilder/issues/9)
+
+La numerazione delle issue non coincide con l'ordine: il damage engine (#3) deve attendere sia la release dati (#2) sia le compatibilità del catalogo (#4).
