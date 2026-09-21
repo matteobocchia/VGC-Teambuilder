@@ -1,16 +1,29 @@
 import { dataMeta, getFormat, getRelease, makeMeta, FORMAT_ID, RELEASE_ID } from './domain/repository';
+import { dataSourceMeta, getDataSourceState } from './data/source';
 import type { DataMeta, Issue } from './domain/types';
 import { issue } from './domain/validation';
 
 export function success<T>(data: T, extraMeta: Partial<DataMeta> & Record<string, unknown> = {}) {
-  return Response.json({ data, meta: { ...makeMeta(), ...extraMeta } }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ data, meta: { ...makeMeta(), ...dataSourceMeta(), ...extraMeta } }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export function failure(issues: Issue[], status = 422, extraMeta: Record<string, unknown> = {}) {
-  return Response.json({ issues, meta: { ...dataMeta, ...extraMeta } }, { status, headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ issues, meta: { ...dataMeta, ...dataSourceMeta(), ...extraMeta } }, { status, headers: { 'Cache-Control': 'no-store' } });
+}
+
+export function ensureDataSource(): Response | undefined {
+  const state = getDataSourceState();
+  if (state.ready) return undefined;
+  const code = state.reason ?? 'DATA_SOURCE_UNAVAILABLE';
+  const message = code === 'DATABASE_URL_REQUIRED'
+    ? 'DATABASE_URL is required outside local development; bundled preview data is disabled.'
+    : 'PostgreSQL is configured, but its server-side adapter is not available yet.';
+  return failure([{ path: '/', code, message, blocking: true }], 503, dataSourceMeta());
 }
 
 export function resolveContext(request: Request): { formatId: string; releaseId: string; meta?: DataMeta; response?: Response } {
+  const sourceResponse = ensureDataSource();
+  if (sourceResponse) return { formatId: '', releaseId: '', response: sourceResponse };
   const url = new URL(request.url);
   const formatId = url.searchParams.get('formatId') ?? FORMAT_ID;
   const releaseId = url.searchParams.get('dataReleaseId') ?? url.searchParams.get('releaseId') ?? RELEASE_ID;

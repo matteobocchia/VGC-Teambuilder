@@ -1,8 +1,10 @@
 import { revisionStore } from '@/server/domain/store';
-import { getAnonymousId, failure, withAnonymousCookie, success } from '@/server/http';
+import { ensureDataSource, getAnonymousId, failure, withAnonymousCookie, success } from '@/server/http';
 import { issue } from '@/server/domain/validation';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const sourceResponse = ensureDataSource();
+  if (sourceResponse) return sourceResponse;
   const { id } = await params;
   const revision = revisionStore.get(id);
   if (!revision) return failure([issue('/id', 'REVISION_NOT_FOUND', 'Team revision was not found.')], 404);
