@@ -1,0 +1,29 @@
+{
+  "release": {
+    "releaseId": "fixture-minimal-v1",
+    "schemaVersion": "1.0",
+    "checksum": "7db1b43a1e89812cfc1f2d667621b26194ae0d54edbb7eb6db2579489150572c",
+    "source": "automated-fixture",
+    "dataStatus": "unverified"
+  },
+  "formats": [
+    {
+      "formatId": "fixture-doubles",
+      "game": "pokemon-champions",
+      "battleMode": "doubles",
+      "level": 50,
+      "labels": { "it": "Fixture Doppio", "en": "Fixture Doubles" },
+      "rules": {},
+      "conversionPolicy": {},
+      "capabilities": {}
+    }
+  ],
+  "species": [],
+  "forms": [],
+  "moves": [],
+  "abilities": [],
+  "items": [],
+  "natures": [],
+  "learnsets": [],
+  "legalities": []
+}

@@ -21,8 +21,8 @@ function environment(): { databaseUrl: string; repository: string; nodeEnv: stri
  *
  * The bundled catalog is deliberately a development/preview fixture. It is
  * never a production fallback and it is never used when DATABASE_URL is set.
- * The PostgreSQL adapter is wired in a later slice; until then a configured
- * database fails explicitly instead of serving demo data.
+ * The PostgreSQL route repository is wired in a later slice; until then a
+ * configured database fails explicitly instead of serving demo data.
  */
 export function getDataSourceState(): DataSourceState {
   const { databaseUrl, repository, nodeEnv } = environment();

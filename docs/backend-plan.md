@@ -22,7 +22,7 @@ Restano intenzionalmente bloccati: certificazione di legalità, danni/KO, import
 
 ### Issue #1 — prima tranche PostgreSQL
 
-È stata aggiunta la migrazione `db/migrations/001_canonical_repository.sql` con release, profili formato, catalogo, learnset, legalità e revisioni append-only. Le tabelle release-scoped hanno trigger di immutabilità. `server/data/source.ts` rende esplicita la policy runtime: la bundled preview è disponibile solo in sviluppo/preview; in produzione senza `DATABASE_URL`, oppure con PostgreSQL configurato ma senza adapter, le API rispondono con errore 503 e non servono dati demo. Restano da completare il driver PostgreSQL, l'import transazionale/idempotente del bundle e i check automatici prima di chiudere l'issue.
+È stata aggiunta la migrazione `db/migrations/001_canonical_repository.sql` con release, profili formato, catalogo, learnset, legalità e revisioni append-only. Le tabelle release-scoped hanno trigger di immutabilità. `server/data/source.ts` rende esplicita la policy runtime: la bundled preview è disponibile solo in sviluppo/preview; in produzione senza `DATABASE_URL`, oppure con PostgreSQL configurato ma senza repository runtime, le API rispondono con errore 503 e non servono dati demo. `scripts/import-release.mjs` importa bundle con checksum SHA-256, transazione e `ON CONFLICT` idempotente; `npm run db:check` verifica automaticamente un fixture senza collegarsi al database. Resta da collegare il repository runtime alle route catalogo/legalità prima di chiudere l'issue.
 
 ## Decisione architetturale
 
