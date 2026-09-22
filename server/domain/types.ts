@@ -86,6 +86,14 @@ export type CompetitiveSet = {
   moveIds: string[];
 };
 
+/** Calculator input can be an inline canonical set or a saved revision slot. */
+export type DamageSetReference = {
+  revisionId: string;
+  slot: number;
+};
+
+export type DamageSetInput = CompetitiveSet | DamageSetReference;
+
 export type TeamRevision = {
   id: string;
   name: string;

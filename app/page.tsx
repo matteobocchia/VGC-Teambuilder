@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClientError, defaultFormatId, getCatalogContext, getCatalogPokemon, type ApiFormat, type ApiMeta, type ApiOption, type ApiPokemon } from './lib/api';
 
 type Locale = 'it' | 'en';
@@ -130,6 +130,19 @@ function optionLabel(option: { labels: { it: string | null; en: string } } | und
   return option ? (locale === 'it' ? option.labels.it ?? option.labels.en : option.labels.en) : '';
 }
 
+function localizedValue(value: string, options: ApiOption[] | undefined, locale: Locale) {
+  const match = options?.find((option) => option.labels.en === value || option.labels.it === value);
+  return match ? optionLabel(match, locale) : value;
+}
+
+function pokemonLabel(pokemon: Pokemon, locale: Locale) {
+  return locale === 'it' ? pokemon.nameIt ?? pokemon.name : pokemon.name;
+}
+
+function pokemonKey(pokemon: Pokemon) {
+  return pokemon.api?.formId ?? pokemon.name;
+}
+
 function setForPokemon(pokemon: Pokemon): PokemonSet {
   const saved = defaultSets[pokemon.name];
   if (saved) return cloneSet(saved);
@@ -181,9 +194,15 @@ const moveCatalog: Record<string, Move> = {
   Psychic: { name: 'Psychic', type: 'Psychic', power: 90, range: '78–92', ko: '45%', score: 45 }, HyperVoice: { name: 'Hyper Voice', type: 'Normal', power: 90, range: '69–82', ko: '31%', score: 31 }, TrickRoom: { name: 'Trick Room', type: 'Psychic', power: null, range: '—', ko: '—', score: null }, HelpingHand: { name: 'Helping Hand', type: 'Normal', power: null, range: '—', ko: '—', score: null },
 };
 
-function movesForSet(set: PokemonSet) {
-  const moveNames = Array.isArray(set.moves) && set.moves.length === 4 ? set.moves : defaultSets['Flutter Mane'].moves;
-  return moveNames.map((name) => moveCatalog[name.replace(/[^A-Za-z]/g, '')] ?? moveCatalog.Protect);
+function movesForSet(set: PokemonSet, pokemon?: Pokemon, locale: Locale = 'en') {
+  const moveNames = Array.isArray(set.moves) && set.moves.length ? set.moves : defaultSets['Flutter Mane'].moves;
+  const learnableMoves = pokemon?.api?.learnableMoves ?? [];
+  return moveNames.map((name) => {
+    const option = learnableMoves.find((move) => move.labels.en === name || move.labels.it === name);
+    const englishName = option?.labels.en ?? name;
+    const move = moveCatalog[englishName.replace(/[^A-Za-z]/g, '')] ?? { name: englishName, type: 'Normal', power: null, range: '—', ko: '—', score: null };
+    return option ? { ...move, name: optionLabel(option, locale) } : move;
+  });
 }
 
 const copy = {
@@ -252,6 +271,57 @@ function EffectGlyph({ effect }: { effect: FieldEffectKey }) {
 const typeClass = (type: string) => `type-${type.toLowerCase().replace(' ', '-')}`;
 const typeNamesIt: Record<string, string> = { Normal: 'Normale', Fighting: 'Lotta', Flying: 'Volante', Poison: 'Veleno', Ground: 'Terra', Rock: 'Roccia', Bug: 'Coleottero', Ghost: 'Spettro', Steel: 'Acciaio', Fire: 'Fuoco', Water: 'Acqua', Grass: 'Erba', Electric: 'Elettro', Psychic: 'Psico', Ice: 'Ghiaccio', Dragon: 'Drago', Dark: 'Buio', Fairy: 'Folletto' };
 const roleLabel = (role: string, locale: Locale) => locale === 'it' ? ({ 'Special attacker': 'Attaccante speciale', 'Pivot / Intimidate': 'Pivot / Prepotenza', 'Terrain setter': 'Setter terreno', 'Physical attacker': 'Attaccante fisico', Redirection: 'Redirect', 'Trick Room support': 'Supporto Trick Room' }[role] ?? role) : role;
+const statNames: Record<Locale, Record<StatKey, string>> = {
+  it: { hp: 'PS', atk: 'Attacco', def: 'Difesa', spa: 'Attacco speciale', spd: 'Difesa speciale', spe: 'Velocità' },
+  en: { hp: 'HP', atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed' },
+};
+const natureValues: Record<string, string> = { Hardy: 'Hardy', Adamant: 'Adamant (+Atk, -SpA)', Modest: 'Modest (+SpA, -Atk)', Timid: 'Timid (+Spe, -Atk)', Careful: 'Careful (+SpD, -SpA)', Jolly: 'Jolly (+Spe, -SpA)', Bold: 'Bold (+Def, -Atk)', Quiet: 'Quiet (+SpA, -Spe)' };
+
+function statLabel(stat: StatKey, locale: Locale) {
+  return statNames[locale][stat];
+}
+
+function apiSelectOptions(options: ApiOption[], locale: Locale, fallback: SelectOption[]) {
+  const mapped = options.map((option) => ({ value: option.labels.en, label: optionLabel(option, locale) })).filter((option) => option.value && option.label);
+  return mapped.length ? mapped : fallback;
+}
+
+function natureSelectOptions(options: ApiOption[], locale: Locale, fallback: SelectOption[]) {
+  const mapped = options.map((option) => {
+    const value = natureValues[option.labels.en] ?? option.labels.en;
+    const modifier = value.startsWith(option.labels.en) ? value.slice(option.labels.en.length) : '';
+    return { value, label: `${optionLabel(option, locale)}${modifier}` };
+  }).filter((option) => option.value && option.label);
+  return mapped.length ? mapped : fallback;
+}
+
+function currentOption(options: ApiOption[], value: string, locale: Locale, nature = false): SelectOption[] {
+  if (!value) return [];
+  const match = options.find((option) => option.labels.en === value || option.labels.it === value || (nature && value.startsWith(`${option.labels.en} `)));
+  if (!match) return [{ value, label: value }];
+  const canonical = nature ? (natureValues[match.labels.en] ?? match.labels.en) : match.labels.en;
+  return [{ value: canonical, label: optionLabel(match, locale) + (nature ? canonical.slice(match.labels.en.length) : '') }];
+}
+
+function normalizeSetForPokemon(pokemon: Pokemon, source: PokemonSet, typeOptions: ApiOption[], natureOptions: ApiOption[]): PokemonSet {
+  const api = pokemon.api;
+  if (!api) return cloneSet(source);
+  const choose = (options: ApiOption[], value: string, fallback: string, nature = false) => {
+    const match = options.find((option) => option.labels.en === value || option.labels.it === value || (nature && value.startsWith(`${option.labels.en} `)));
+    if (!match) return options[0] ? (nature ? (natureValues[options[0].labels.en] ?? options[0].labels.en) : options[0].labels.en) : fallback;
+    return nature ? (natureValues[match.labels.en] ?? match.labels.en) : match.labels.en;
+  };
+  const moveNames = Array.from(new Set(source.moves.filter((name) => api.learnableMoves.some((move) => move.labels.en === name || move.labels.it === name))));
+  const fallbackMoves = api.learnableMoves.map((move) => move.labels.en).filter((name) => !moveNames.includes(name));
+  return {
+    ...cloneSet(source),
+    tera: choose(typeOptions, source.tera, 'Normal'),
+    item: choose(api.items, source.item, 'None'),
+    ability: choose(api.abilities, source.ability, '—'),
+    nature: choose(natureOptions, source.nature, 'Hardy', true),
+    moves: [...moveNames, ...fallbackMoves].slice(0, 4),
+  };
+}
 
 function TypeTag({ type, locale = 'en' }: { type: string; locale?: Locale }) {
   return <span className={`type-tag ${typeClass(type)}`}>{locale === 'it' ? (typeNamesIt[type] ?? type) : type}</span>;
@@ -271,25 +341,31 @@ function TopBar({ locale, setLocale, copyForLocale, activePath, saved, onSave, s
   </header>;
 }
 
-function SetupInspector({ copyForLocale, selected, activeSet, activeMoves, setActiveSet, selectedMoveIndex, setSelectedMoveIndex }: { copyForLocale: (typeof copy)[Locale]; selected: Pokemon; activeSet: PokemonSet; activeMoves: Move[]; setActiveSet: (patch: Partial<PokemonSet>) => void; selectedMoveIndex: number; setSelectedMoveIndex: (index: number) => void }) {
+function SetupInspector({ copyForLocale, side, selected, activeSet, activeMoves, typeOptions, natureOptions, setActiveSet, selectedMoveIndex, setSelectedMoveIndex }: { copyForLocale: (typeof copy)[Locale]; side: 'attacker' | 'defender'; selected: Pokemon; activeSet: PokemonSet; activeMoves: Move[]; typeOptions: ApiOption[]; natureOptions: ApiOption[]; setActiveSet: (patch: Partial<PokemonSet>) => void; selectedMoveIndex: number; setSelectedMoveIndex: (index: number) => void }) {
   const locale: Locale = copyForLocale.language === 'Italiano' ? 'it' : 'en';
   const derivedStats = deriveStats(selected, activeSet);
-  const statEntries = [['HP', 'hp', activeSet.statPoints.hp, derivedStats.hp], ['Atk', 'atk', activeSet.statPoints.atk, derivedStats.atk], ['Def', 'def', activeSet.statPoints.def, derivedStats.def], ['Sp. Atk', 'spa', activeSet.statPoints.spa, derivedStats.spa], ['Sp. Def', 'spd', activeSet.statPoints.spd, derivedStats.spd], ['Speed', 'spe', activeSet.statPoints.spe, derivedStats.spe]] as const;
+  const statEntries = statKeys.map((key) => [statLabel(key, locale), key, activeSet.statPoints[key], derivedStats[key]] as const);
+  const teraOptions = typeOptions.length ? apiSelectOptions(typeOptions, locale, []) : currentOption([], activeSet.tera, locale);
+  const itemOptions = selected.api?.items.length ? apiSelectOptions(selected.api.items, locale, []) : currentOption([], activeSet.item, locale);
+  const abilityOptions = selected.api?.abilities.length ? apiSelectOptions(selected.api.abilities, locale, []) : currentOption([], activeSet.ability, locale);
+  const natureOptionsForLocale = natureOptions.length ? natureSelectOptions(natureOptions, locale, []) : currentOption([], activeSet.nature, locale, true);
+  const sliderLabel = locale === 'it' ? 'cursore' : 'slider';
+  const moveOptions: SelectOption[] = selected.api?.learnableMoves.map((move) => ({ value: move.labels.en, label: optionLabel(move, locale) })) ?? Object.values(moveCatalog).map((move) => move.name);
   return <aside className="setup-inspector">
-    <div className="panel-title-row"><div><h1>{copyForLocale.setup}</h1><p>{copyForLocale.attacker} · {selected.name}</p></div><button className="icon-button" type="button" aria-label={copyForLocale.inspectorOptions} disabled><SlidersHorizontal size={17} /></button></div>
+    <div className="panel-title-row"><div><h1>{copyForLocale.setup}</h1><p>{side === 'attacker' ? copyForLocale.attacker : copyForLocale.defender} · {selected.name}</p></div><button className="icon-button" type="button" aria-label={copyForLocale.inspectorOptions} disabled><SlidersHorizontal size={17} /></button></div>
     <div className="selected-pokemon"><div className="pokemon-monogram">{selected.name.slice(0, 2).toUpperCase()}</div><div className="selected-copy"><strong>{selected.name}</strong><div className="tag-row">{selected.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</div></div><span className="level-badge">Lv. 50</span></div>
-    <div className="field-stack"><SelectControl label={copyForLocale.tera} value={activeSet.tera} onChange={(value) => setActiveSet({ tera: value })} options={['Fairy', 'Ghost', 'Fire', 'Water', 'Grass']} /><SelectControl label={copyForLocale.item} value={activeSet.item} onChange={(value) => setActiveSet({ item: value })} options={['Choice Specs', 'Safety Goggles', 'Focus Sash', 'Assault Vest', 'Rocky Helmet', 'Mental Herb', 'Booster Energy']} /><SelectControl label={copyForLocale.ability} value={activeSet.ability} onChange={(value) => setActiveSet({ ability: value })} options={['Protosynthesis', 'Intimidate', 'Grassy Surge', 'Unseen Fist', 'Regenerator', 'Armor Tail']} /><SelectControl label={copyForLocale.nature} value={activeSet.nature} onChange={(value) => setActiveSet({ nature: value })} options={['Timid (+Spe, -Atk)', 'Modest (+SpA, -Atk)', 'Careful (+SpD, -SpA)', 'Adamant (+Atk, -SpA)', 'Jolly (+Spe, -SpA)', 'Bold (+Def, -Atk)', 'Quiet (+SpA, -Spe)']} /></div>
+    <div className="field-stack"><SelectControl label={copyForLocale.tera} value={activeSet.tera} onChange={(value) => setActiveSet({ tera: value })} options={teraOptions} /><SelectControl label={copyForLocale.item} value={activeSet.item} onChange={(value) => setActiveSet({ item: value })} options={itemOptions} /><SelectControl label={copyForLocale.ability} value={activeSet.ability} onChange={(value) => setActiveSet({ ability: value })} options={abilityOptions} /><SelectControl label={copyForLocale.nature} value={activeSet.nature} onChange={(value) => setActiveSet({ nature: value })} options={natureOptionsForLocale} /></div>
     <div className="section-divider" />
     <div className="stat-heading"><div><h2>{copyForLocale.statPoints}</h2><p>{copyForLocale.statHint}</p></div><span className="stat-total">{Object.values(activeSet.statPoints).reduce((sum, value) => sum + value, 0)} / 66</span></div>
-    <div className="stat-list">{statEntries.map(([label, key, value, derived]) => <label className="stat-row" key={label}><span className="stat-label">{label}</span><input aria-label={`${label} Stat Points`} type="number" min={0} max={32} value={value} onChange={(event) => setActiveSet({ statPoints: { ...activeSet.statPoints, [key]: Number(event.target.value) } })} /><input className="stat-range" aria-label={`${label} Stat Points slider`} type="range" min={0} max={32} value={value} onChange={(event) => setActiveSet({ statPoints: { ...activeSet.statPoints, [key]: Number(event.target.value) } })} /><span className="derived-value">{derived}</span></label>)}</div>
-    <div className="section-divider" /><div className="moves-heading"><h2>{copyForLocale.moves}</h2><span>{activeMoves.length} / 4</span></div><div className="move-list">{activeMoves.map((move, index) => <button type="button" aria-pressed={selectedMoveIndex === index} className={`move-row ${selectedMoveIndex === index ? 'move-row-active' : ''}`} key={move.name} onClick={() => setSelectedMoveIndex(index)}><span className={`move-icon ${typeClass(move.type)}`}>{move.power === null ? <Shield size={15} /> : <Sparkles size={15} />}</span><span className="move-name">{move.name}</span><TypeTag type={move.type} locale={locale} /></button>)}</div>
+    <div className="stat-list">{statEntries.map(([label, key, value, derived]) => <label className="stat-row" key={key}><span className="stat-label">{label}</span><input aria-label={`${label} · ${copyForLocale.statPoints}`} type="number" min={0} max={32} value={value} onChange={(event) => setActiveSet({ statPoints: { ...activeSet.statPoints, [key]: Number(event.target.value) } })} /><input className="stat-range" aria-label={`${label} · ${copyForLocale.statPoints} · ${sliderLabel}`} type="range" min={0} max={32} value={value} onChange={(event) => setActiveSet({ statPoints: { ...activeSet.statPoints, [key]: Number(event.target.value) } })} /><span className="derived-value">{derived}</span></label>)}</div>
+    <div className="section-divider" /><div className="moves-heading"><h2>{copyForLocale.moves}</h2><span>{activeMoves.length} / 4</span></div><div className="move-list">{activeMoves.map((move, index) => <label className={`move-row ${selectedMoveIndex === index ? 'move-row-active' : ''}`} key={`${move.name}-${index}`}><span className={`move-icon ${typeClass(move.type)}`}>{move.power === null ? <Shield size={15} /> : <Sparkles size={15} />}</span><select aria-label={`${copyForLocale.moves} ${index + 1}`} value={activeSet.moves[index] ?? move.name} onFocus={() => setSelectedMoveIndex(index)} onChange={(event) => { const moves = [...activeSet.moves]; moves[index] = event.target.value; setActiveSet({ moves }); setSelectedMoveIndex(index); }}>{moveOptions.map((option) => { const normalized = typeof option === 'string' ? { value: option, label: option } : option; return <option value={normalized.value} key={normalized.value}>{normalized.label}</option>; })}</select><TypeTag type={move.type} locale={locale} /></label>)}</div>
   </aside>;
 }
 
-function Region({ side, pokemon, set, copyForLocale }: { side: 'attacker' | 'defender'; pokemon: Pokemon; set: PokemonSet; copyForLocale: (typeof copy)[Locale] }) {
+function Region({ side, pokemon, set, typeOptions, copyForLocale }: { side: 'attacker' | 'defender'; pokemon: Pokemon; set: PokemonSet; typeOptions: ApiOption[]; copyForLocale: (typeof copy)[Locale] }) {
   const locale: Locale = copyForLocale.language === 'Italiano' ? 'it' : 'en';
   const derivedStats = deriveStats(pokemon, set);
-  return <div className={`map-region map-region-${side}`}><div className="region-meta"><span>{side === 'attacker' ? copyForLocale.attacker : copyForLocale.defender}</span><span className="region-index">0{side === 'attacker' ? 1 : 2}</span></div><div className="region-heading"><strong>{pokemon.name}</strong><div className="tag-row">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</div></div><div className="region-data"><span>{copyForLocale.level} <b>50</b></span><span>{copyForLocale.tera} <b>{set.tera}</b></span><span>{copyForLocale.item} <b>{set.item}</b></span><span>{copyForLocale.ability} <b>{set.ability}</b></span></div><div className="region-hp"><span>HP</span><strong>{derivedStats.hp} / {derivedStats.hp}</strong></div></div>;
+  return <div className={`map-region map-region-${side}`}><div className="region-meta"><span>{side === 'attacker' ? copyForLocale.attacker : copyForLocale.defender}</span><span className="region-index">0{side === 'attacker' ? 1 : 2}</span></div><div className="region-heading"><strong>{pokemonLabel(pokemon, locale)}</strong><div className="tag-row">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</div></div><div className="region-data"><span>{copyForLocale.level} <b>50</b></span><span>{copyForLocale.tera} <b>{localizedValue(set.tera, typeOptions, locale)}</b></span><span>{copyForLocale.item} <b>{localizedValue(set.item, pokemon.api?.items, locale)}</b></span><span>{copyForLocale.ability} <b>{localizedValue(set.ability, pokemon.api?.abilities, locale)}</b></span></div><div className="region-hp"><span>HP</span><strong>{derivedStats.hp} / {derivedStats.hp}</strong></div></div>;
 }
 
 function FieldControls({ copyForLocale, fieldState, setFieldState, mode, summary }: { copyForLocale: (typeof copy)[Locale]; fieldState: FieldState; setFieldState: (patch: Partial<FieldState>) => void; mode: Mode; summary: string }) {
@@ -322,12 +398,12 @@ function FieldControls({ copyForLocale, fieldState, setFieldState, mode, summary
   return <section className="field-section"><div className="field-heading"><div><h2>{copyForLocale.field}</h2><p>{copyForLocale.fieldSummary} · {summary}</p></div><span>{mode === 'doubles' ? '2v2' : '1v1'}</span></div><div className="field-panel"><fieldset className="field-group"><legend>{copyForLocale.weather}</legend><div className="field-option-row field-option-row-weather">{weatherOptions.map((option) => <button type="button" key={option.key} aria-pressed={fieldState.weather === option.key} className={`field-option field-option-weather field-option-${option.key} ${fieldState.weather === option.key ? 'field-option-active' : ''}`} onClick={() => setFieldState({ weather: option.key })}><WeatherGlyph weather={option.key} /><span>{option.label}</span></button>)}</div></fieldset><fieldset className="field-group"><legend>{copyForLocale.terrain}</legend><div className="field-option-row field-option-row-terrain">{terrainOptions.map((option) => <button type="button" key={option.key} aria-pressed={fieldState.terrain === option.key} className={`field-option field-option-terrain field-option-${option.key} ${fieldState.terrain === option.key ? 'field-option-active' : ''}`} onClick={() => setFieldState({ terrain: option.key })}><TerrainGlyph terrain={option.key} /><span>{option.label}</span></button>)}</div></fieldset><div className="field-effect-columns"><fieldset className="field-group"><legend>{copyForLocale.screens}</legend><div className="field-effect-grid">{protectionEffects.map((effect) => <button type="button" key={effect.key} aria-pressed={fieldState[effect.key]} className={`field-option field-option-effect ${fieldState[effect.key] ? 'field-option-active' : ''}`} onClick={() => toggleEffect(effect.key)}><EffectGlyph effect={effect.key} /><span>{effect.label}</span></button>)}</div></fieldset><fieldset className="field-group"><legend>{copyForLocale.speedSpace}</legend><div className="field-effect-grid">{speedEffects.map((effect) => <button type="button" key={effect.key} aria-pressed={fieldState[effect.key]} className={`field-option field-option-effect ${fieldState[effect.key] ? 'field-option-active' : ''}`} onClick={() => toggleEffect(effect.key)}><EffectGlyph effect={effect.key} /><span>{effect.label}</span></button>)}</div></fieldset></div><div className="field-active-summary" aria-live="polite"><Check size={15} aria-hidden="true" /><span><b>{copyForLocale.fieldSummary}:</b> {summary}</span></div></div></section>;
 }
 
-function MatchupRoute({ copyForLocale, roster, attacker, defender, attackerSet, defenderSet, attackerIndex, defenderIndex, setAttackerIndex, setDefenderIndex, mode, setMode, activeMoves, selectedMoveIndex, setSelectedMoveIndex, fieldState, setFieldState, fieldSummary }: { copyForLocale: (typeof copy)[Locale]; roster: Pokemon[]; attacker: Pokemon; defender: Pokemon; attackerSet: PokemonSet; defenderSet: PokemonSet; attackerIndex: number; defenderIndex: number; setAttackerIndex: (index: number) => void; setDefenderIndex: (index: number) => void; mode: Mode; setMode: (mode: Mode) => void; activeMoves: Move[]; selectedMoveIndex: number; setSelectedMoveIndex: (index: number) => void; fieldState: FieldState; setFieldState: (patch: Partial<FieldState>) => void; fieldSummary: string }) {
+function MatchupRoute({ copyForLocale, roster, attacker, defender, attackerSet, defenderSet, typeOptions, attackerIndex, defenderIndex, setAttackerIndex, setDefenderIndex, mode, setMode, activeMoves, selectedMoveIndex, setSelectedMoveIndex, fieldState, setFieldState, fieldSummary }: { copyForLocale: (typeof copy)[Locale]; roster: Pokemon[]; attacker: Pokemon; defender: Pokemon; attackerSet: PokemonSet; defenderSet: PokemonSet; typeOptions: ApiOption[]; attackerIndex: number; defenderIndex: number; setAttackerIndex: (index: number) => void; setDefenderIndex: (index: number) => void; mode: Mode; setMode: (mode: Mode) => void; activeMoves: Move[]; selectedMoveIndex: number; setSelectedMoveIndex: (index: number) => void; fieldState: FieldState; setFieldState: (patch: Partial<FieldState>) => void; fieldSummary: string }) {
   const locale: Locale = copyForLocale.language === 'Italiano' ? 'it' : 'en';
   const selectedMove = activeMoves[selectedMoveIndex] ?? activeMoves[0];
   const moveType = selectedMove.type;
-  const selector = (label: string, value: number, onChange: (index: number) => void, blockedIndex: number) => <label className="control-field"><span>{label}</span><span className="select-wrap"><select value={value} onChange={(event) => onChange(Number(event.target.value))} aria-label={label}>{roster.map((pokemon, index) => <option key={pokemon.name} value={index} disabled={index === blockedIndex}>{index + 1} · {pokemon.name}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>;
-  return <section className="route-column"><div className="route-title-row"><div><h2>{copyForLocale.route}</h2><p>{attacker.name} <ArrowRight size={14} /> {defender.name}</p></div><fieldset className="mode-toggle" aria-label={copyForLocale.battleMode}><button type="button" aria-pressed={mode === 'doubles'} className={mode === 'doubles' ? 'mode-active' : ''} onClick={() => setMode('doubles')}>2v2</button><button type="button" aria-pressed={mode === 'singles'} className={mode === 'singles' ? 'mode-active' : ''} onClick={() => setMode('singles')}>1v1</button></fieldset></div><div className="matchup-selectors">{selector(copyForLocale.attackerSlot, attackerIndex, setAttackerIndex, defenderIndex)}{selector(copyForLocale.defenderSlot, defenderIndex, setDefenderIndex, attackerIndex)}</div><div className="map-canvas"><div className="map-grid-markers" aria-hidden="true"><span /> <span /> <span /></div><Region side="attacker" pokemon={attacker} set={attackerSet} copyForLocale={copyForLocale} /><Region side="defender" pokemon={defender} set={defenderSet} copyForLocale={copyForLocale} /><div className="route-line" aria-hidden="true"><span /> <span /> <span /></div><div className="result-stack"><button type="button" className={`move-selector type-${moveType.toLowerCase()}`} aria-label={`${copyForLocale.selectMove}: ${selectedMove.name}`} onClick={() => setSelectedMoveIndex((selectedMoveIndex + 1) % activeMoves.length)}><span className={`move-icon ${typeClass(moveType)}`}><Sparkles size={15} /></span><strong>{selectedMove.name}</strong><TypeTag type={moveType} locale={locale} /><ChevronDown size={15} /></button><div className="ko-result"><span>{copyForLocale.koChance} · {copyForLocale.preset}</span><strong>{selectedMove.ko}</strong><small>{copyForLocale.versus} {defender.name}</small></div><div className="result-details"><span><b>{selectedMove.range}</b><small>{copyForLocale.damage}</small></span><span><b>{selectedMove.ko ?? '—'}</b><small>{copyForLocale.allRolls}</small></span></div></div></div><FieldControls copyForLocale={copyForLocale} fieldState={fieldState} setFieldState={setFieldState} mode={mode} summary={fieldSummary} /></section>;
+  const selector = (label: string, value: number, onChange: (index: number) => void, blockedIndex: number) => <label className="control-field"><span>{label}</span><span className="select-wrap"><select value={value} onChange={(event) => onChange(Number(event.target.value))} aria-label={label}>{roster.map((pokemon, index) => <option key={pokemon.name} value={index} disabled={index === blockedIndex}>{index + 1} · {pokemonLabel(pokemon, locale)}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>;
+  return <section className="route-column"><div className="route-title-row"><div><h2>{copyForLocale.route}</h2><p>{pokemonLabel(attacker, locale)} <ArrowRight size={14} /> {pokemonLabel(defender, locale)}</p></div><fieldset className="mode-toggle" aria-label={copyForLocale.battleMode}><button type="button" aria-pressed={mode === 'doubles'} className={mode === 'doubles' ? 'mode-active' : ''} onClick={() => setMode('doubles')}>2v2</button><button type="button" aria-pressed={mode === 'singles'} className={mode === 'singles' ? 'mode-active' : ''} onClick={() => setMode('singles')}>1v1</button></fieldset></div><div className="matchup-selectors">{selector(copyForLocale.attackerSlot, attackerIndex, setAttackerIndex, defenderIndex)}{selector(copyForLocale.defenderSlot, defenderIndex, setDefenderIndex, attackerIndex)}</div><div className="map-canvas"><div className="map-grid-markers" aria-hidden="true"><span /> <span /> <span /></div><Region side="attacker" pokemon={attacker} set={attackerSet} typeOptions={typeOptions} copyForLocale={copyForLocale} /><Region side="defender" pokemon={defender} set={defenderSet} typeOptions={typeOptions} copyForLocale={copyForLocale} /><div className="route-line" aria-hidden="true"><span /> <span /> <span /></div><div className="result-stack"><button type="button" className={`move-selector type-${moveType.toLowerCase()}`} aria-label={`${copyForLocale.selectMove}: ${selectedMove.name}`} onClick={() => setSelectedMoveIndex((selectedMoveIndex + 1) % activeMoves.length)}><span className={`move-icon ${typeClass(moveType)}`}><Sparkles size={15} /></span><strong>{selectedMove.name}</strong><TypeTag type={moveType} locale={locale} /><ChevronDown size={15} /></button><div className="ko-result"><span>{copyForLocale.koChance} · {copyForLocale.preset}</span><strong>{selectedMove.ko}</strong><small>{copyForLocale.versus} {pokemonLabel(defender, locale)}</small></div><div className="result-details"><span><b>{selectedMove.range}</b><small>{copyForLocale.damage}</small></span><span><b>{selectedMove.ko ?? '—'}</b><small>{copyForLocale.allRolls}</small></span></div></div></div><FieldControls copyForLocale={copyForLocale} fieldState={fieldState} setFieldState={setFieldState} mode={mode} summary={fieldSummary} /></section>;
 }
 
 function OutcomesMatrix({ copyForLocale, defender, detailsOpen, setDetailsOpen, activeMoves, selectedMoveIndex, fieldSummary }: { copyForLocale: (typeof copy)[Locale]; defender: Pokemon; detailsOpen: boolean; setDetailsOpen: (open: boolean) => void; activeMoves: Move[]; selectedMoveIndex: number; fieldSummary: string }) {
@@ -336,7 +412,7 @@ function OutcomesMatrix({ copyForLocale, defender, detailsOpen, setDetailsOpen, 
   const targetDamage = [['Incineroar', ['112–132', '71–84', '56–67', '—']], ['Rillaboom', ['30–36', '24–29', '78–92', '—']], ['Urshifu', ['74–88', '62–73', '16–19', '—']], ['Amoonguss', ['66–78', '44–52', '27–32', '—']], ['Farigiraf', ['46–55', '64–75', '19–22', '—']]] as const;
   const [metric, setMetric] = useState<'percent' | 'damage'>('percent');
   const selectedMove = activeMoves[selectedMoveIndex] ?? activeMoves[0];
-  return <section className="outcomes-panel"><div className="outcomes-heading"><div><h2>{copyForLocale.outcomes}</h2><p>{copyForLocale.primary} · {selectedMove.name} {copyForLocale.versus} {defender.name} · {copyForLocale.preset}</p></div><div className="outcomes-actions"><button type="button" aria-pressed={detailsOpen} aria-expanded={detailsOpen} aria-controls="outcomes-details" className="outline-button" onClick={() => setDetailsOpen(!detailsOpen)}><Info size={14} /> {copyForLocale.details}</button><fieldset className="segmented" aria-label={copyForLocale.damage}><button type="button" aria-pressed={metric === 'percent'} className={metric === 'percent' ? 'segmented-active' : ''} onClick={() => setMetric('percent')}>%</button><button type="button" aria-pressed={metric === 'damage'} className={metric === 'damage' ? 'segmented-active' : ''} onClick={() => setMetric('damage')}>{copyForLocale.damage}</button></fieldset></div></div><div className="table-wrap"><table><thead><tr><th>{copyForLocale.moves}</th><th>{copyForLocale.power}</th><th>{copyForLocale.damage}</th><th>{copyForLocale.allRolls}</th>{targetKOs.map(([target]) => <th key={target}>{metric === 'percent' ? copyForLocale.ko : copyForLocale.damage}<br /><span>{target}</span></th>)}</tr></thead><tbody>{activeMoves.map((move, index) => <tr key={move.name} className={index === selectedMoveIndex ? 'table-row-primary' : ''}><td><span className={`table-move-icon ${typeClass(move.type)}`}>{move.power === null ? <Shield size={14} /> : <Sparkles size={14} />}</span><strong>{move.name}</strong><TypeTag type={move.type} locale={locale} /></td><td>{move.power ?? '—'}</td><td>{move.range}</td><td>{move.ko}</td>{targetKOs.map(([, values], targetIndex) => <td key={`${move.name}-${targetIndex}`}><span className={index === selectedMoveIndex ? 'ko-pill' : ''}>{metric === 'percent' ? values[index] : targetDamage[targetIndex][1][index]}</span></td>)}</tr>)}</tbody></table></div>{detailsOpen && <div className="details-callout" id="outcomes-details"><Info size={14} /><span>{copyForLocale.critical}: 3.1% · {copyForLocale.spread}: ×1.00 · {copyForLocale.field}: {fieldSummary}</span></div>}<div className="accuracy-note"><CircleAlert size={14} /><span>{copyForLocale.formatWarning}. {copyForLocale.accuracyNote}</span></div></section>;
+  return <section className="outcomes-panel"><div className="outcomes-heading"><div><h2>{copyForLocale.outcomes}</h2><p>{copyForLocale.primary} · {selectedMove.name} {copyForLocale.versus} {pokemonLabel(defender, locale)} · {copyForLocale.preset}</p></div><div className="outcomes-actions"><button type="button" aria-pressed={detailsOpen} aria-expanded={detailsOpen} aria-controls="outcomes-details" className="outline-button" onClick={() => setDetailsOpen(!detailsOpen)}><Info size={14} /> {copyForLocale.details}</button><fieldset className="segmented" aria-label={copyForLocale.damage}><button type="button" aria-pressed={metric === 'percent'} className={metric === 'percent' ? 'segmented-active' : ''} onClick={() => setMetric('percent')}>%</button><button type="button" aria-pressed={metric === 'damage'} className={metric === 'damage' ? 'segmented-active' : ''} onClick={() => setMetric('damage')}>{copyForLocale.damage}</button></fieldset></div></div><div className="table-wrap"><table><thead><tr><th>{copyForLocale.moves}</th><th>{copyForLocale.power}</th><th>{copyForLocale.damage}</th><th>{copyForLocale.allRolls}</th>{targetKOs.map(([target]) => <th key={target}>{metric === 'percent' ? copyForLocale.ko : copyForLocale.damage}<br /><span>{target}</span></th>)}</tr></thead><tbody>{activeMoves.map((move, index) => <tr key={move.name} className={index === selectedMoveIndex ? 'table-row-primary' : ''}><td><span className={`table-move-icon ${typeClass(move.type)}`}>{move.power === null ? <Shield size={14} /> : <Sparkles size={14} />}</span><strong>{move.name}</strong><TypeTag type={move.type} locale={locale} /></td><td>{move.power ?? '—'}</td><td>{move.range}</td><td>{move.ko}</td>{targetKOs.map(([, values], targetIndex) => <td key={`${move.name}-${targetIndex}`}><span className={index === selectedMoveIndex ? 'ko-pill' : ''}>{metric === 'percent' ? values[index] : targetDamage[targetIndex][1][index]}</span></td>)}</tr>)}</tbody></table></div>{detailsOpen && <div className="details-callout" id="outcomes-details"><Info size={14} /><span>{copyForLocale.critical}: 3.1% · {copyForLocale.spread}: ×1.00 · {copyForLocale.field}: {fieldSummary}</span></div>}<div className="accuracy-note"><CircleAlert size={14} /><span>{copyForLocale.formatWarning}. {copyForLocale.accuracyNote}</span></div></section>;
 }
 
 function TeamRail({ roster, selectedIndex, setSelectedIndex, copyForLocale }: { roster: Pokemon[]; selectedIndex: number; setSelectedIndex: (index: number) => void; copyForLocale: (typeof copy)[Locale] }) {
@@ -345,22 +421,16 @@ function TeamRail({ roster, selectedIndex, setSelectedIndex, copyForLocale }: { 
 }
 
 function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
-  const [savedWorkspace] = useState<Partial<{ locale: Locale; mode: Mode; attackerIndex: number; defenderIndex: number; fieldState: FieldState; sets: Record<string, PokemonSet> }>>(() => {
-    try {
-      if (typeof window === 'undefined') return {};
-      return JSON.parse(window.localStorage.getItem('vgc-forge:workspace-v1') ?? '{}');
-    } catch {
-      return {};
-    }
-  });
-  const [locale, setLocaleState] = useState<Locale>(() => storedLocale() ?? (savedWorkspace.locale === 'en' ? 'en' : 'it'));
+  const [savedWorkspace] = useState<Partial<{ locale: Locale; mode: Mode; attackerIndex: number; defenderIndex: number; fieldState: FieldState; sets: Record<string, PokemonSet> }>>({});
+  const [locale, setLocaleState] = useState<Locale>('it');
   const setLocale = (nextLocale: Locale) => { setLocaleState(nextLocale); persistLocale(nextLocale); };
   const [mode, setMode] = useState<Mode>(savedWorkspace.mode === 'singles' ? 'singles' : 'doubles');
   const [attackerIndex, setAttackerIndexState] = useState(typeof savedWorkspace.attackerIndex === 'number' && team[savedWorkspace.attackerIndex] ? savedWorkspace.attackerIndex : 0);
   const [defenderIndex, setDefenderIndexState] = useState(typeof savedWorkspace.defenderIndex === 'number' && team[savedWorkspace.defenderIndex] ? savedWorkspace.defenderIndex : 1);
   const [selectedMoveIndex, setSelectedMoveIndex] = useState(0);
+  const [defenderMoveIndex, setDefenderMoveIndex] = useState(0);
   const [fieldState, setFieldStateState] = useState<FieldState>({ weather: 'clear', terrain: 'electric', reflect: true, lightScreen: false, auroraVeil: false, safeguard: false, tailwind: false, trickRoom: false, gravity: false, ...savedWorkspace.fieldState });
-  const persistedSets = savedWorkspace.sets && typeof savedWorkspace.sets === 'object' ? Object.fromEntries(Object.entries(savedWorkspace.sets).filter(([name, set]) => Boolean(defaultSets[name]) && Array.isArray(set.moves) && set.moves.length === 4)) as Record<string, PokemonSet> : {};
+  const persistedSets = savedWorkspace.sets && typeof savedWorkspace.sets === 'object' ? Object.fromEntries(Object.entries(savedWorkspace.sets).filter(([, set]) => Boolean(set) && Array.isArray((set as PokemonSet).moves) && (set as PokemonSet).moves.length > 0)) as Record<string, PokemonSet> : {};
   const [sets, setSets] = useState<Record<string, PokemonSet>>({ ...defaultSets, ...persistedSets });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -368,18 +438,55 @@ function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
   const [catalogEntries, setCatalogEntries] = useState<Pokemon[] | null>(null);
   const [catalogMeta, setCatalogMeta] = useState<ApiMeta | null>(null);
   const [catalogFormat, setCatalogFormat] = useState<ApiFormat | null>(null);
+  const [catalogOptions, setCatalogOptions] = useState<{ types: ApiOption[]; natures: ApiOption[] }>({ types: [], natures: [] });
+  const [builderDraftSlots, setBuilderDraftSlots] = useState<Array<Exclude<BuilderSlot, null>>>([]);
+  const builderImportedRef = useRef(false);
   const [catalogError, setCatalogError] = useState<ApiClientError | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const copyForLocale = copy[locale];
   const pathname = usePathname();
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem('vgc-forge:workspace-v1');
+        const parsed = raw ? JSON.parse(raw) as Partial<{ locale: Locale; mode: Mode; attackerIndex: number; defenderIndex: number; fieldState: FieldState; sets: Record<string, PokemonSet> }> : {};
+        const preferredLocale = storedLocale() ?? (parsed.locale === 'en' ? 'en' : 'it');
+        setLocaleState(preferredLocale);
+        if (parsed.mode === 'singles' || parsed.mode === 'doubles') setMode(parsed.mode);
+        if (typeof parsed.attackerIndex === 'number') setAttackerIndexState(parsed.attackerIndex);
+        if (typeof parsed.defenderIndex === 'number') setDefenderIndexState(parsed.defenderIndex);
+        if (parsed.fieldState) setFieldStateState((current) => ({ ...current, ...parsed.fieldState }));
+        if (parsed.sets && typeof parsed.sets === 'object') setSets((current) => ({ ...current, ...parsed.sets }));
+      } catch {
+        // Local workspace state is optional; defaults remain authoritative.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   const loadCatalog = useCallback(async (signal?: AbortSignal) => {
     setCatalogLoading(true);
     setCatalogError(null);
     try {
       const context = await getCatalogContext({ formatId: defaultFormatId, signal });
       setCatalogFormat(context.data.format);
+      setCatalogOptions({ types: context.data.types, natures: context.data.natures });
       const response = await getCatalogPokemon({ formatId: context.data.format.id, dataReleaseId: context.meta.releaseId ?? undefined, locale, signal });
-      setCatalogEntries(response.data.pokemon.map(viewPokemonFromApi));
+      const entries = response.data.pokemon.map(viewPokemonFromApi);
+      setCatalogEntries(entries);
+      try {
+        if (builderImportedRef.current) {
+          setCatalogMeta(response.meta);
+          return;
+        }
+        const rawDraft = JSON.parse(window.localStorage.getItem('vgc-forge:builder-v1') ?? '{}') as { slots?: unknown };
+        const restored = restoreBuilderSlots(rawDraft.slots, entries);
+        const validRestored = restored.filter((slot): slot is Exclude<BuilderSlot, null> => slot !== null);
+        setBuilderDraftSlots(validRestored);
+        if (validRestored.length && entries[0]) setSets((current) => validRestored.reduce((next, slot) => { const pokemon = entries.find((entry) => entry.name === slot.pokemonName); return pokemon ? { ...next, [pokemonKey(pokemon)]: normalizeSetForPokemon(pokemon, slot.set, context.data.types, context.data.natures) } : next; }, current));
+        builderImportedRef.current = true;
+      } catch {
+        setBuilderDraftSlots([]);
+      }
       setCatalogMeta(response.meta);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -393,12 +500,14 @@ function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
     const timer = window.setTimeout(() => void loadCatalog(controller.signal), 0);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [loadCatalog]);
-  const activeTeam = catalogEntries ?? team;
+  const draftPokemon = useMemo(() => builderDraftSlots.map((slot) => catalogEntries?.find((entry) => entry.name === slot.pokemonName)).filter((entry): entry is Pokemon => Boolean(entry)), [builderDraftSlots, catalogEntries]);
+  const catalogRoster = catalogEntries ?? team;
+  const activeTeam = useMemo(() => draftPokemon.length ? [...draftPokemon, ...catalogRoster.filter((entry) => !draftPokemon.some((draft) => pokemonKey(draft) === pokemonKey(entry)))] : catalogRoster, [catalogRoster, draftPokemon]);
   const attacker = useMemo(() => activeTeam[attackerIndex] ?? activeTeam[0] ?? team[0], [activeTeam, attackerIndex]);
   const defender = useMemo(() => activeTeam[defenderIndex] ?? activeTeam[1] ?? activeTeam[0] ?? team[1], [activeTeam, defenderIndex]);
   const selectedTarget = defender;
-  const activeSet = sets[attacker.name] ?? setForPokemon(attacker);
-  const activeMoves = movesForSet(activeSet);
+  const activeSet = normalizeSetForPokemon(attacker, sets[pokemonKey(attacker)] ?? sets[attacker.name] ?? setForPokemon(attacker), catalogOptions.types, catalogOptions.natures);
+  const activeMoves = movesForSet(activeSet, attacker, locale);
   const selectedMove = activeMoves[selectedMoveIndex] ?? activeMoves[0];
   useEffect(() => { document.documentElement.lang = locale; }, [locale]);
   const activeFieldSummary = fieldSummary(copyForLocale, fieldState);
@@ -412,10 +521,12 @@ function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
   const setDefenderIndex = (index: number) => {
     if (!activeTeam[index] || index === attackerIndex) return;
     setDefenderIndexState(index);
+    setDefenderMoveIndex(0);
   };
   const setActiveSet = (patch: Partial<PokemonSet>) => setSets((current) => {
-    const currentSet = current[attacker.name] ?? setForPokemon(attacker);
-    if (!patch.statPoints) return { ...current, [attacker.name]: { ...currentSet, ...patch } };
+    const key = pokemonKey(attacker);
+    const currentSet = current[key] ?? current[attacker.name] ?? setForPokemon(attacker);
+    if (!patch.statPoints) return { ...current, [key]: { ...currentSet, ...patch } };
     const raw = patch.statPoints;
     const changedKey = statKeys.find((key) => raw[key] !== currentSet.statPoints[key]) ?? 'hp';
     const nextPoints = statKeys.reduce((result, key) => ({ ...result, [key]: Math.min(32, Math.max(0, Number.isFinite(Number(raw[key])) ? Math.round(Number(raw[key])) : currentSet.statPoints[key])) }), {} as Record<StatKey, number>);
@@ -426,9 +537,19 @@ function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
       nextPoints[key] -= reduction;
       overflow -= reduction;
     }
-    return { ...current, [attacker.name]: { ...currentSet, ...patch, statPoints: nextPoints } };
+    return { ...current, [key]: { ...currentSet, ...patch, statPoints: nextPoints } };
   });
-  const defenderSet = sets[defender.name] ?? setForPokemon(defender);
+  const setDefenderSet = (patch: Partial<PokemonSet>) => setSets((current) => {
+    const key = pokemonKey(defender);
+    const currentSet = current[key] ?? current[defender.name] ?? setForPokemon(defender);
+    if (!patch.statPoints) return { ...current, [key]: { ...currentSet, ...patch } };
+    const raw = patch.statPoints;
+    const changedKey = statKeys.find((key) => raw[key] !== currentSet.statPoints[key]) ?? 'hp';
+    const nextPoints = clampStatPoints({ ...currentSet.statPoints, ...raw }, changedKey);
+    return { ...current, [key]: { ...currentSet, ...patch, statPoints: nextPoints } };
+  });
+  const defenderSet = normalizeSetForPokemon(defender, sets[pokemonKey(defender)] ?? sets[defender.name] ?? setForPokemon(defender), catalogOptions.types, catalogOptions.natures);
+  const defenderMoves = movesForSet(defenderSet, defender, locale);
   const setFieldState = (patch: Partial<FieldState>) => setFieldStateState((current) => ({ ...current, ...patch }));
   const saveWorkspace = () => {
     window.localStorage.setItem('vgc-forge:workspace-v1', JSON.stringify({ locale, mode, attackerIndex, defenderIndex, fieldState, sets }));
@@ -445,14 +566,15 @@ function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
          FIRST VIEWPORT: setup inspector, primary KO result, field state, outcomes matrix, and six-slot team rail.
          FORM: generous cream canvas with angular map regions, dense data rows, and semantic controls.
          FINISH: one restrained state transition, responsive stacking, keyboard-visible controls, no decorative gradients. */}
-    <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath={pathname === '/calculator' ? '/calculator' : '/'} saved={saved} onSave={saveWorkspace} showSave={!standalone} /><div className="format-banner"><CircleAlert size={14} /><span>{catalogStatusMessage(catalogMeta, copyForLocale)}{standalone ? ` · ${copyForLocale.demoRoster}` : ''}</span>{standalone && engineUnavailable && <output className="engine-status-label">{copyForLocale.engineUnavailable}</output>}{catalogMeta?.releaseId && <small>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {catalogMeta.releaseId}</small>}<button type="button" aria-pressed={showHelp} aria-expanded={showHelp} aria-controls="help-callout" onClick={() => setShowHelp(!showHelp)}>{copyForLocale.howItWorks}</button></div>{standalone && <div className="preset-callout" role="note"><CircleAlert size={15} aria-hidden="true" /><span>{copyForLocale.presetNotice}</span></div>}{showHelp && <div className="help-callout" id="help-callout"><Info size={14} /><span>{locale === 'it' ? (standalone ? 'Scegli attaccante e difensore dal catalogo server, configura il set attivo e seleziona una mossa: i risultati restano preset finché l’engine non è certificato.' : 'Scegli un Pokémon dal rail, modifica Stat Points e seleziona una mossa: il route e la matrice si aggiornano insieme.') : (standalone ? 'Choose an attacker and defender from the server catalog, tune the active set, and select a move: results remain presets until the engine is certified.' : 'Choose a Pokémon from the rail, tune the active set, and select a move: the route and matrix stay in sync.')}</span></div>}<div className={`workspace-grid ${standalone ? 'workspace-grid-standalone' : ''}`}><SetupInspector copyForLocale={copyForLocale} selected={attacker} activeSet={activeSet} activeMoves={activeMoves} setActiveSet={setActiveSet} selectedMoveIndex={selectedMoveIndex} setSelectedMoveIndex={setSelectedMoveIndex} /><div className="main-column"><MatchupRoute copyForLocale={copyForLocale} roster={activeTeam} attacker={attacker} defender={defender} attackerSet={activeSet} defenderSet={defenderSet} attackerIndex={attackerIndex} defenderIndex={defenderIndex} setAttackerIndex={setAttackerIndex} setDefenderIndex={setDefenderIndex} mode={mode} setMode={setMode} activeMoves={activeMoves} selectedMoveIndex={selectedMoveIndex} setSelectedMoveIndex={setSelectedMoveIndex} fieldState={fieldState} setFieldState={setFieldState} fieldSummary={activeFieldSummary} /><OutcomesMatrix copyForLocale={copyForLocale} defender={defender} detailsOpen={detailsOpen} setDetailsOpen={setDetailsOpen} activeMoves={activeMoves} selectedMoveIndex={selectedMoveIndex} fieldSummary={activeFieldSummary} /></div>{!standalone && <TeamRail roster={activeTeam} selectedIndex={attackerIndex} setSelectedIndex={setAttackerIndex} copyForLocale={copyForLocale} />}</div><div className="mobile-context" aria-live="polite"><span>{copyForLocale.defender}: {selectedTarget.name}</span><span>·</span><span>{copyForLocale.ko} {selectedMove.ko} · {copyForLocale.preset}</span></div>
+    <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath={pathname === '/calculator' ? '/calculator' : '/'} saved={saved} onSave={saveWorkspace} showSave={!standalone} /><div className="format-banner"><CircleAlert size={14} /><span>{catalogStatusMessage(catalogMeta, copyForLocale)}{standalone ? ` · ${copyForLocale.demoRoster}` : ''}</span>{standalone && engineUnavailable && <output className="engine-status-label">{copyForLocale.engineUnavailable}</output>}{builderDraftSlots.length > 0 && <output className="engine-status-label">{locale === 'it' ? 'Bozza builder caricata' : 'Builder draft loaded'}</output>}{catalogMeta?.releaseId && <small>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {catalogMeta.releaseId}</small>}<button type="button" aria-pressed={showHelp} aria-expanded={showHelp} aria-controls="help-callout" onClick={() => setShowHelp(!showHelp)}>{copyForLocale.howItWorks}</button></div>{standalone && <div className="preset-callout" role="note"><CircleAlert size={15} aria-hidden="true" /><span>{copyForLocale.presetNotice}</span></div>}{showHelp && <div className="help-callout" id="help-callout"><Info size={14} /><span>{locale === 'it' ? (standalone ? 'Scegli attaccante e difensore dal catalogo server, configura il set attivo e seleziona una mossa: i risultati restano preset finché l’engine non è certificato.' : 'Scegli un Pokémon dal rail, modifica Stat Points e seleziona una mossa: il route e la matrice si aggiornano insieme.') : (standalone ? 'Choose an attacker and defender from the server catalog, tune the active set, and select a move: results remain presets until the engine is certified.' : 'Choose a Pokémon from the rail, tune the active set, and select a move: the route and matrix stay in sync.')}</span></div>}<div className={`workspace-grid ${standalone ? 'workspace-grid-standalone' : ''}`}><SetupInspector side="attacker" copyForLocale={copyForLocale} selected={attacker} activeSet={activeSet} activeMoves={activeMoves} typeOptions={catalogOptions.types} natureOptions={catalogOptions.natures} setActiveSet={setActiveSet} selectedMoveIndex={selectedMoveIndex} setSelectedMoveIndex={setSelectedMoveIndex} /><div className="main-column"><MatchupRoute copyForLocale={copyForLocale} roster={activeTeam} attacker={attacker} defender={defender} attackerSet={activeSet} defenderSet={defenderSet} typeOptions={catalogOptions.types} attackerIndex={attackerIndex} defenderIndex={defenderIndex} setAttackerIndex={setAttackerIndex} setDefenderIndex={setDefenderIndex} mode={mode} setMode={setMode} activeMoves={activeMoves} selectedMoveIndex={selectedMoveIndex} setSelectedMoveIndex={setSelectedMoveIndex} fieldState={fieldState} setFieldState={setFieldState} fieldSummary={activeFieldSummary} /><div className="defender-inspector-wrap"><SetupInspector side="defender" copyForLocale={copyForLocale} selected={defender} activeSet={defenderSet} activeMoves={defenderMoves} typeOptions={catalogOptions.types} natureOptions={catalogOptions.natures} setActiveSet={setDefenderSet} selectedMoveIndex={defenderMoveIndex} setSelectedMoveIndex={setDefenderMoveIndex} /></div><OutcomesMatrix copyForLocale={copyForLocale} defender={defender} detailsOpen={detailsOpen} setDetailsOpen={setDetailsOpen} activeMoves={activeMoves} selectedMoveIndex={selectedMoveIndex} fieldSummary={activeFieldSummary} /></div>{!standalone && <TeamRail roster={activeTeam} selectedIndex={attackerIndex} setSelectedIndex={setAttackerIndex} copyForLocale={copyForLocale} />}</div><div className="mobile-context" aria-live="polite"><span>{copyForLocale.defender}: {pokemonLabel(selectedTarget, locale)}</span><span>·</span><span>{copyForLocale.ko} {selectedMove.ko} · {copyForLocale.preset}</span></div>
   </main>;
 }
 
 function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, natureOptions, typeOptions, onUpdate, onRemove }: { copyForLocale: (typeof copy)[Locale]; locale: Locale; pokemon: Pokemon; slot: BuilderSlot & { pokemonName: string; set: PokemonSet }; natureOptions: ApiOption[]; typeOptions: ApiOption[]; onUpdate: (patch: Partial<PokemonSet>) => void; onRemove: () => void }) {
   const { set } = slot;
   const derivedStats = deriveStats(pokemon, set);
-  const statEntries = [['HP', 'hp'], ['Atk', 'atk'], ['Def', 'def'], ['Sp. Atk', 'spa'], ['Sp. Def', 'spd'], ['Speed', 'spe']] as const;
+  const statEntries = statKeys.map((key) => [statLabel(key, locale), key] as const);
+  const sliderLabel = locale === 'it' ? 'cursore' : 'slider';
   const moveOptions: SelectOption[] = pokemon.api?.learnableMoves.map((move) => ({ value: optionLabel(move), label: optionLabel(move, locale) })) ?? Object.values(moveCatalog).map((move) => move.name);
   const itemOptions: SelectOption[] = pokemon.api?.items.map((item) => ({ value: optionLabel(item), label: optionLabel(item, locale) })) ?? ['Choice Specs', 'Safety Goggles', 'Focus Sash', 'Assault Vest', 'Rocky Helmet', 'Mental Herb', 'Booster Energy'];
   const abilityOptions: SelectOption[] = pokemon.api?.abilities.map((ability) => ({ value: optionLabel(ability), label: optionLabel(ability, locale) })) ?? ['Protosynthesis', 'Intimidate', 'Grassy Surge', 'Unseen Fist', 'Regenerator', 'Armor Tail'];
@@ -478,7 +600,7 @@ function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, natureOptions,
     </div>
     <div className="builder-divider" />
     <div className="builder-section-heading"><div><h2>{copyForLocale.statPoints}</h2><p>{copyForLocale.statHint}</p></div><strong>{Object.values(set.statPoints).reduce((sum, value) => sum + value, 0)} / 66</strong></div>
-    <div className="builder-stat-grid">{statEntries.map(([label, key]) => <label className="builder-stat-row" key={key}><span>{label}</span><input type="number" min={0} max={32} value={set.statPoints[key]} aria-label={`${label} Stat Points`} onChange={(event) => updateStat(key, Number(event.target.value))} /><input type="range" min={0} max={32} value={set.statPoints[key]} aria-label={`${label} Stat Points slider`} onChange={(event) => updateStat(key, Number(event.target.value))} /><b>{derivedStats[key]}</b></label>)}</div>
+    <div className="builder-stat-grid">{statEntries.map(([label, key]) => <label className="builder-stat-row" key={key}><span>{label}</span><input type="number" min={0} max={32} value={set.statPoints[key]} aria-label={`${label} · ${copyForLocale.statPoints}`} onChange={(event) => updateStat(key, Number(event.target.value))} /><input type="range" min={0} max={32} value={set.statPoints[key]} aria-label={`${label} · ${copyForLocale.statPoints} · ${sliderLabel}`} onChange={(event) => updateStat(key, Number(event.target.value))} /><b>{derivedStats[key]}</b></label>)}</div>
     <div className="builder-divider" />
     <div className="builder-section-heading"><div><h2>{copyForLocale.moves}</h2><p>{copyForLocale.moveHint}</p></div><span>4 / 4</span></div>
     <div className="builder-move-grid">{set.moves.map((move, index) => <label className="builder-move-field" key={`${index}-${move}`}><span>{index + 1}</span><span className="select-wrap"><select value={move} aria-label={`${copyForLocale.moves} ${index + 1}`} onChange={(event) => updateMove(index, event.target.value)}>{moveOptions.map((option) => { const normalized = typeof option === 'string' ? { value: option, label: option } : option; return <option key={normalized.value} value={normalized.value}>{normalized.label}</option>; })}</select><ChevronDown size={15} aria-hidden="true" /></span></label>)}</div>

@@ -162,13 +162,13 @@ export async function getPostgresFormats(releaseId?: string): Promise<Array<Form
 export async function getPostgresCatalog(context: RuntimeContext): Promise<CatalogPokemon[]> {
   const forms = arrayOf(context.bundle.forms);
   const species = new Map(arrayOf(context.bundle.species).map((entry) => [stringValue(entry.speciesId), entry]));
-  const formats = arrayOf(context.bundle.formats);
   const legalities = arrayOf(context.bundle.legalities);
-  const formatIds = formats.map((entry) => stringValue(entry.formatId)).filter(Boolean);
   return forms
-    .map((form) => mapPokemon(form, species.get(stringValue(form.speciesId)), context.bundle, context.format.id, formatIds, legalities))
+    .map((form) => mapPokemon(form, species.get(stringValue(form.speciesId)), context.bundle, context.format.id, legalities))
     .filter((entry): entry is CatalogPokemon => entry !== undefined)
-    .filter((entry) => entry.legalFormats.includes(context.format.id) || entry.legalFormats.length === 0);
+    // Unknown/conditional rows remain usable as catalog options, but banned
+    // forms must never leak into a format-scoped picker.
+    .filter((entry) => entry.legalityStatus !== 'banned');
 }
 
 export async function getPostgresPokemon(context: RuntimeContext, id: string, speciesId?: string): Promise<CatalogPokemon | undefined> {
@@ -259,7 +259,7 @@ function mapFormat(row: ContextRow): FormatProfile {
   };
 }
 
-function mapPokemon(form: JsonObject, species: JsonObject | undefined, bundle: JsonObject, formatId: string, formatIds: string[], legalities: JsonObject[]): CatalogPokemon | undefined {
+function mapPokemon(form: JsonObject, species: JsonObject | undefined, bundle: JsonObject, formatId: string, legalities: JsonObject[]): CatalogPokemon | undefined {
   const formId = stringValue(form.formId);
   const speciesId = stringValue(form.speciesId);
   if (!formId || !speciesId) return undefined;
@@ -292,7 +292,10 @@ function mapPokemon(form: JsonObject, species: JsonObject | undefined, bundle: J
     abilities: optionArray(form.abilities ?? form.abilityIds, 'ability', bundle),
     items: optionArray(form.items ?? form.itemIds, 'item', bundle),
     learnableMoves: optionArray(form.learnableMoves ?? form.moveIds, 'move', bundle),
-    legalFormats: legalFormats.length ? legalFormats : formatIds,
+    // Only explicit `allowed` legality is advertised as legal. Unknown and
+    // conditional entries stay selectable for inspection without claiming
+    // compatibility with every format in the release.
+    legalFormats,
     ...(objectValue(form.initialSet) ? { initialSet: objectValue(form.initialSet) as CatalogPokemon['initialSet'] } : {}),
   };
 }
