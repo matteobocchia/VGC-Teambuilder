@@ -174,6 +174,42 @@ export async function getPostgresRevision(id: string): Promise<TeamRevision | un
     [id],
   );
   const row = rows[0];
+  return mapRevisionRow(row);
+}
+
+/** Resolve a revision only when the supplied bearer token matches its team. */
+export async function getPostgresRevisionByShareToken(id: string, tokenHash: string): Promise<TeamRevision | undefined> {
+  const rows = await query<RevisionRow>(
+    `SELECT r.revision_id, t.name, r.format_id, r.data_release_id, r.locale, r.status,
+            t.owner_id, r.snapshot, r.created_at, t.updated_at
+       FROM team_revisions r
+       JOIN teams t ON t.team_id = r.team_id
+      WHERE r.revision_id = $1
+        AND t.share_token_hash = $2
+      LIMIT 1`,
+    [id, tokenHash],
+  );
+  return mapRevisionRow(rows[0]);
+}
+
+/** Rotate the team's share credential without touching the immutable snapshot. */
+export async function setPostgresShareToken(revisionId: string, ownerId: string, tokenHash: string): Promise<boolean> {
+  const rows = await query<{ team_id: string }>(
+    `UPDATE teams
+        SET share_token_hash = $1
+      WHERE team_id = (
+        SELECT team_id
+          FROM team_revisions
+         WHERE revision_id = $2
+      )
+        AND owner_id = $3
+      RETURNING team_id`,
+    [tokenHash, revisionId, ownerId],
+  );
+  return rows.length === 1;
+}
+
+function mapRevisionRow(row: RevisionRow | undefined): TeamRevision | undefined {
   if (!row) return undefined;
   const snapshot = objectValue(row.snapshot);
   const slots = snapshot?.slots;

@@ -145,6 +145,27 @@ try {
   assert(malformedCalculator.response.status === 400, `malformed calculator returned ${malformedCalculator.response.status}`);
   assert(malformedCalculator.body.issues?.some((entry) => entry.code === 'BATTLE_MODE_REQUIRED'), 'malformed calculator did not expose request validation issues');
 
+  const draftRevision = await request('/api/v1/teams/revisions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ formatId, dataReleaseId: releaseId, locale: 'en', name: 'Share gate draft', slots: [null, null, null, null, null, null] }),
+  });
+  assert(draftRevision.response.status === 200, `draft revision returned ${draftRevision.response.status}`);
+  const draftRevisionId = draftRevision.body.data?.revision?.id;
+  assert(typeof draftRevisionId === 'string', 'draft revision id missing');
+  const ownerCookie = draftRevision.response.headers.get('set-cookie')?.split(';', 1)[0];
+  assert(ownerCookie, 'draft revision owner cookie missing');
+  const shareDraft = await request(`/api/v1/teams/revisions/${encodeURIComponent(draftRevisionId)}/share`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', Cookie: ownerCookie },
+    body: JSON.stringify({}),
+  });
+  assert(shareDraft.response.status === 422, `draft share returned ${shareDraft.response.status}`);
+  assert(shareDraft.body.issues?.[0]?.code === 'REVISION_NOT_SHAREABLE', 'draft share did not stay read-only blocked');
+  const invalidShare = await request(`/api/v1/teams/revisions/${encodeURIComponent(draftRevisionId)}?shareToken=invalid-token`, { headers: { Accept: 'application/json' } });
+  assert(invalidShare.response.status === 404, `invalid share token returned ${invalidShare.response.status}`);
+  assert(invalidShare.body.issues?.[0]?.code === 'SHARE_TOKEN_INVALID', 'invalid share token error code mismatch');
+
   const showdownImport = await request('/api/v1/showdown/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -189,7 +210,7 @@ try {
     releaseId,
     dataStatus: context.body.meta.dataStatus,
     catalogCount: catalog.body.data.pokemon.length,
-    checks: ['fixture-checksum', 'context-coverage', 'catalog', 'calculator-request-validation', 'calculator-unverified', 'showdown-legacy-boundary', 'showdown-header-parser', 'showdown-stat-points-boundary', 'showdown-unverified', 'unknown-release', 'invalid-pagination'],
+    checks: ['fixture-checksum', 'context-coverage', 'catalog', 'calculator-request-validation', 'calculator-unverified', 'revision-share-boundary', 'showdown-legacy-boundary', 'showdown-header-parser', 'showdown-stat-points-boundary', 'showdown-unverified', 'unknown-release', 'invalid-pagination'],
   }, null, 2));
 } finally {
   if (ownsServer) server.kill('SIGTERM');

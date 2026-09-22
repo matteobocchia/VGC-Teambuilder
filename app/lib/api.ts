@@ -104,6 +104,11 @@ export type ApiTeamRevision = {
   updatedAt: string;
 };
 
+export type ApiTeamShare = {
+  revisionId: string;
+  shareUrl: string;
+};
+
 export type ApiShowdownImport = {
   slots: Array<ApiTeamSet | null>;
   issues: ApiIssue[];
@@ -188,8 +193,14 @@ export async function saveTeamRevision(input: { name: string; formatId: string; 
   return requestJson<{ revision: ApiTeamRevision; stats: Array<ApiStatValues | null>; issues: ApiIssue[] }>('/api/v1/teams/revisions', { method: 'POST', body: input, signal });
 }
 
-export async function getTeamRevision(id: string, signal?: AbortSignal) {
-  return getJson<ApiTeamRevision>(`/api/v1/teams/revisions/${encodeURIComponent(id)}`, signal);
+export async function getTeamRevision(id: string, options: { signal?: AbortSignal; shareToken?: string } | AbortSignal = {}) {
+  const normalized = 'aborted' in options ? { signal: options } : options;
+  const query = normalized.shareToken ? `?shareToken=${encodeURIComponent(normalized.shareToken)}` : '';
+  return getJson<ApiTeamRevision>(`/api/v1/teams/revisions/${encodeURIComponent(id)}${query}`, normalized.signal);
+}
+
+export async function shareTeamRevision(id: string, signal?: AbortSignal) {
+  return requestJson<ApiTeamShare>(`/api/v1/teams/revisions/${encodeURIComponent(id)}/share`, { method: 'POST', body: {}, signal });
 }
 
 export async function importShowdown(input: { formatId: string; dataReleaseId: string; text: string; locale: ApiLocale }, signal?: AbortSignal) {

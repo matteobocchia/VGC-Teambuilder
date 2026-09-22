@@ -31,7 +31,7 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ApiClientError, defaultFormatId, exportShowdown, getCatalogContext, getCatalogPokemon, getTeamRevision, importShowdown, saveTeamRevision, type ApiFormat, type ApiIssue, type ApiMeta, type ApiOption, type ApiPokemon, type ApiTeamSet } from './lib/api';
+import { ApiClientError, defaultFormatId, exportShowdown, getCatalogContext, getCatalogPokemon, getTeamRevision, importShowdown, saveTeamRevision, shareTeamRevision, type ApiFormat, type ApiIssue, type ApiMeta, type ApiOption, type ApiPokemon, type ApiTeamRevision, type ApiTeamSet } from './lib/api';
 
 type Locale = 'it' | 'en';
 type Mode = 'doubles' | 'singles';
@@ -233,6 +233,15 @@ function revisionErrorMessage(error: ApiClientError, locale: Locale) {
   return locale === 'it' ? 'Revisione non salvata o caricata. Controlla gli errori e riprova; la bozza locale è intatta.' : 'Revision was not saved or loaded. Check the errors and retry; your local draft is intact.';
 }
 
+function shareErrorMessage(error: ApiClientError, locale: Locale) {
+  if (error.code === 'REVISION_NOT_FOUND') return locale === 'it' ? 'La revisione salvata non è più disponibile. Salva una nuova revisione e riprova.' : 'The saved revision is no longer available. Save a new revision and try again.';
+  if (error.code === 'REVISION_NOT_SHAREABLE') return locale === 'it' ? 'Condivisione non disponibile: servono sei set legali nella revisione.' : 'Sharing is unavailable: the revision must contain six legal sets.';
+  if (error.code === 'DATA_UNVERIFIED') return locale === 'it' ? 'La release non è verificata: il server non può creare un link condivisibile.' : 'This release is unverified: the server cannot create a shareable link.';
+  if (error.code === 'POSTGRESQL_TEAM_REPOSITORY_NOT_CONFIGURED') return locale === 'it' ? 'La condivisione server non è ancora configurata. La revisione resta privata.' : 'Server sharing is not configured yet. The revision remains private.';
+  if (error.code === 'REQUEST_TIMEOUT') return locale === 'it' ? 'Il server impiega troppo tempo. Riprova: la revisione salvata è intatta.' : 'The server is taking too long. Retry; the saved revision is unchanged.';
+  return locale === 'it' ? 'Link non creato. La revisione salvata è intatta: controlla gli errori e riprova.' : 'The link was not created. Your saved revision is unchanged; check the errors and retry.';
+}
+
 function revisionIssueMessage(issue: ApiIssue, locale: Locale) {
   const names: Record<string, [string, string]> = {
     ITEM_CLAUSE: ['Strumento duplicato nel team', 'Duplicate held item in team'],
@@ -242,6 +251,8 @@ function revisionIssueMessage(issue: ApiIssue, locale: Locale) {
     STAT_POINTS_TOTAL: ['Totale Stat Points superiore a 66', 'Total Stat Points exceeds 66'],
     DUPLICATE_MOVE: ['Mossa duplicata nel set', 'Duplicate move in set'],
     DATA_UNVERIFIED: ['Release non verificata', 'Unverified release'],
+    REVISION_NOT_SHAREABLE: ['La revisione deve contenere sei set legali', 'The revision must contain six legal sets'],
+    SHARE_LINK_REQUIRED: ['Il server non ha restituito un link condivisibile', 'The server did not return a shareable link'],
   };
   const location = issue.path.match(/^\/slots\/(\d+)/);
   const prefix = location ? `Slot ${Number(location[1]) + 1}: ` : '';
@@ -732,10 +743,15 @@ function BuilderWorkspace() {
   const [query, setQuery] = useState('');
   const [saved, setSaved] = useState(false);
   const [revisionId, setRevisionId] = useState<string | null>(null);
+  const [revisionStatus, setRevisionStatus] = useState<ApiTeamRevision['status'] | null>(null);
   const [revisionDirty, setRevisionDirty] = useState(false);
   const [revisionBusy, setRevisionBusy] = useState<'save' | 'load' | null>(null);
   const [revisionMessage, setRevisionMessage] = useState<string | null>(null);
   const [revisionIssues, setRevisionIssues] = useState<string[]>([]);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [shareIssues, setShareIssues] = useState<string[]>([]);
   const [showdownMode, setShowdownMode] = useState<'import' | 'export' | null>(null);
   const [showdownText, setShowdownText] = useState('');
   const [showdownOutput, setShowdownOutput] = useState('');
@@ -817,6 +833,9 @@ function BuilderWorkspace() {
 
   const updateSlot = (patch: Partial<PokemonSet>) => {
     setRevisionDirty(true);
+    setShareUrl(null);
+    setShareMessage(null);
+    setShareIssues([]);
     setShowdownOutput('');
     setSlots((current) => current.map((slot, index) => index === selectedSlot && slot ? { ...slot, set: { ...slot.set, ...patch } } : slot));
   };
@@ -827,6 +846,9 @@ function BuilderWorkspace() {
     if (takenNames.has(pokemonKey)) return;
     setSlots((current) => current.map((slot, index) => index === selectedSlot ? { pokemonName: pokemon.name, pokemonId: pokemonKey, set: setForPokemon(pokemon) } : slot));
     setRevisionDirty(true);
+    setShareUrl(null);
+    setShareMessage(null);
+    setShareIssues([]);
     setShowdownOutput('');
     setQuery('');
   };
@@ -837,6 +859,9 @@ function BuilderWorkspace() {
   const removePokemon = () => {
     setSlots((current) => current.map((slot, index) => index === selectedSlot ? null : slot));
     setRevisionDirty(true);
+    setShareUrl(null);
+    setShareMessage(null);
+    setShareIssues([]);
     setShowdownOutput('');
     setQuery('');
   };
@@ -854,6 +879,9 @@ function BuilderWorkspace() {
   const saveRevision = async () => {
     setRevisionMessage(null);
     setRevisionIssues([]);
+    setShareUrl(null);
+    setShareMessage(null);
+    setShareIssues([]);
     if (!catalogFormat || !catalogMeta?.releaseId || !catalogEntries) {
       setRevisionMessage(locale === 'it' ? 'Carica il catalogo server prima di salvare una revisione.' : 'Load the server catalog before saving a revision.');
       return;
@@ -868,9 +896,10 @@ function BuilderWorkspace() {
     try {
       const response = await saveTeamRevision({ name: teamName.trim() || copyForLocale.newTeam, formatId: catalogFormat.id, dataReleaseId: catalogMeta.releaseId, locale, slots: converted.slots });
       const id = response.data.revision.id;
-      setRevisionId(id);
-      saveBuilder(id);
       const status = response.data.revision.status;
+      setRevisionId(id);
+      setRevisionStatus(status);
+      saveBuilder(id);
       setRevisionMessage(locale === 'it' ? `Revisione ${id.slice(0, 8)} salvata · ${status === 'blocked' ? 'legalità non verificata' : status === 'draft' ? 'bozza incompleta' : 'legale'}.` : `Revision ${id.slice(0, 8)} saved · ${status === 'blocked' ? 'legality unverified' : status === 'draft' ? 'incomplete draft' : 'legal'}.`);
     } catch (error) {
       const clientError = error instanceof ApiClientError ? error : new ApiClientError('The data service is unavailable.', 503);
@@ -886,6 +915,9 @@ function BuilderWorkspace() {
     setRevisionBusy('load');
     setRevisionMessage(null);
     setRevisionIssues([]);
+    setShareUrl(null);
+    setShareMessage(null);
+    setShareIssues([]);
     try {
       const response = await getTeamRevision(revisionId);
       const revision = response.data;
@@ -901,6 +933,7 @@ function BuilderWorkspace() {
       setTeamName(revision.name);
       setSlots(restored);
       setSelectedSlot(0);
+      setRevisionStatus(revision.status);
       setRevisionDirty(false);
       try {
         window.localStorage.setItem('vgc-forge:builder-v1', JSON.stringify({ locale, teamName: revision.name, slots: restored, selectedSlot: 0, revisionId: revision.id, catalog: catalogEntries ?? undefined }));
@@ -914,6 +947,44 @@ function BuilderWorkspace() {
       setRevisionIssues(clientError.issues.map((issue) => revisionIssueMessage(issue, locale)));
     } finally {
       setRevisionBusy(null);
+    }
+  };
+
+  const shareRevision = async () => {
+    if (!revisionId || revisionBusy || shareBusy) return;
+    if (revisionDirty && !window.confirm(locale === 'it' ? 'La bozza contiene modifiche non salvate. Il link condividerà solo la revisione server salvata. Continuare?' : 'This draft has unsaved changes. The link will share only the saved server revision. Continue?')) return;
+    setShareBusy(true);
+    setRevisionMessage(null);
+    setRevisionIssues([]);
+    setShareMessage(null);
+    setShareIssues([]);
+    try {
+      const response = await shareTeamRevision(revisionId);
+      const nextShareUrl = response.data.shareUrl?.trim();
+      if (!nextShareUrl) {
+        const missing = new ApiClientError('The server did not return a shareable link.', 502, 'SHARE_LINK_REQUIRED', [{ path: '/shareUrl', code: 'SHARE_LINK_REQUIRED', message: 'The server did not return a shareable link.', blocking: true }]);
+        setShareMessage(shareErrorMessage(missing, locale));
+        setShareIssues(missing.issues.map((issue) => revisionIssueMessage(issue, locale)));
+        return;
+      }
+      setShareUrl(nextShareUrl);
+      setShareMessage(locale === 'it' ? 'Link read-only creato. Condivide la revisione salvata, non la bozza locale.' : 'Read-only link created. It shares the saved revision, not the local draft.');
+    } catch (error) {
+      const clientError = error instanceof ApiClientError ? error : new ApiClientError('The data service is unavailable.', 503);
+      setShareMessage(shareErrorMessage(clientError, locale));
+      setShareIssues(clientError.issues.map((issue) => revisionIssueMessage(issue, locale)));
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const copyShareLink = async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareMessage(locale === 'it' ? 'Link read-only copiato negli appunti.' : 'Read-only link copied to the clipboard.');
+    } catch {
+      setShareMessage(locale === 'it' ? 'Copia automatica non disponibile: seleziona il link e copialo manualmente.' : 'Automatic copy is unavailable: select the link and copy it manually.');
     }
   };
 
@@ -939,7 +1010,11 @@ function BuilderWorkspace() {
       setSlots(imported);
       setSelectedSlot(firstFilled < 0 ? 0 : firstFilled);
       setRevisionId(null);
+      setRevisionStatus(null);
       setRevisionDirty(false);
+      setShareUrl(null);
+      setShareMessage(null);
+      setShareIssues([]);
       setShowdownOutput('');
       try {
         window.localStorage.setItem('vgc-forge:builder-v1', JSON.stringify({ locale, teamName, slots: imported, selectedSlot: firstFilled < 0 ? 0 : firstFilled, revisionId: null, catalog: catalogEntries }));
@@ -996,7 +1071,19 @@ function BuilderWorkspace() {
     <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath="/" saved={saved} onSave={() => saveBuilder()} showSave />
     <div className="format-banner" role={catalogError ? 'alert' : undefined} aria-live="polite"><CircleAlert size={14} /><span>{catalogLoading ? copyForLocale.loadingCatalog : catalogError ? catalogErrorMessage(catalogError, copyForLocale) : catalogStatusMessage(catalogMeta, copyForLocale)}</span>{catalogMeta?.releaseId && <small>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {catalogMeta.releaseId}</small>}{catalogError ? <button type="button" onClick={() => void loadCatalog()}>{copyForLocale.retry}</button> : <span className="builder-save-note">{saved ? copyForLocale.savedLocally : copyForLocale.autoSave}</span>}</div>
     <section className="builder-header"><div><h1>{teamName || copyForLocale.newTeam}</h1><p>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {slots.filter(Boolean).length} / 6</p></div><label className="builder-name-field"><span>{copyForLocale.teamName}</span><input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder={copyForLocale.newTeam} /></label></section>
-    <section className="builder-revisions" aria-label={locale === 'it' ? 'Revisioni del team' : 'Team revisions'}><div className="builder-revision-copy"><strong>{locale === 'it' ? 'Revisioni server' : 'Server revisions'}</strong><span>{revisionId ? `${locale === 'it' ? 'Revisione collegata' : 'Linked revision'} · ${revisionId.slice(0, 8)}` : (locale === 'it' ? 'Nessuna revisione server salvata' : 'No server revision saved')}{revisionDirty ? ` · ${locale === 'it' ? 'Modifiche non salvate' : 'Unsaved changes'}` : ''}</span></div><div className="builder-revision-actions"><button type="button" onClick={() => void saveRevision()} disabled={!!revisionBusy || catalogLoading || !!catalogError}>{revisionBusy === 'save' ? (locale === 'it' ? 'Salvataggio…' : 'Saving…') : (locale === 'it' ? 'Salva revisione' : 'Save revision')}</button><button type="button" onClick={() => void loadRevision()} disabled={!revisionId || !!revisionBusy || catalogLoading || !!catalogError}>{revisionBusy === 'load' ? (locale === 'it' ? 'Caricamento…' : 'Loading…') : (locale === 'it' ? 'Carica revisione' : 'Load revision')}</button></div>{revisionMessage && <div className="builder-revision-feedback" role={revisionIssues.length ? 'alert' : 'status'}><p>{revisionMessage}</p>{revisionIssues.length > 0 && <ul>{revisionIssues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul>}</div>}</section>
+    <section className="builder-revisions" aria-label={locale === 'it' ? 'Revisioni del team' : 'Team revisions'}>
+      <div className="builder-revision-copy"><strong>{locale === 'it' ? 'Revisioni server' : 'Server revisions'}</strong><span>{revisionId ? `${locale === 'it' ? 'Revisione collegata' : 'Linked revision'} · ${revisionId.slice(0, 8)}` : (locale === 'it' ? 'Nessuna revisione server salvata' : 'No server revision saved')}{revisionDirty ? ` · ${locale === 'it' ? 'Modifiche non salvate' : 'Unsaved changes'}` : ''}</span></div>
+      <div className="builder-revision-actions">
+        <button type="button" onClick={() => void saveRevision()} disabled={!!revisionBusy || shareBusy || catalogLoading || !!catalogError}>{revisionBusy === 'save' ? (locale === 'it' ? 'Salvataggio…' : 'Saving…') : (locale === 'it' ? 'Salva revisione' : 'Save revision')}</button>
+        <button type="button" onClick={() => void loadRevision()} disabled={!revisionId || !!revisionBusy || shareBusy || catalogLoading || !!catalogError}>{revisionBusy === 'load' ? (locale === 'it' ? 'Caricamento…' : 'Loading…') : (locale === 'it' ? 'Carica revisione' : 'Load revision')}</button>
+        <button type="button" onClick={() => void shareRevision()} disabled={!revisionId || revisionStatus !== 'legal' || !!revisionBusy || shareBusy}>{shareBusy ? (locale === 'it' ? 'Creazione link…' : 'Creating link…') : (locale === 'it' ? 'Condividi read-only' : 'Share read-only')}</button>
+      </div>
+      {!revisionId && <p className="builder-revision-hint">{locale === 'it' ? 'Salva una revisione server per ottenere un link read-only.' : 'Save a server revision to get a read-only link.'}</p>}
+      {revisionId && revisionStatus && revisionStatus !== 'legal' && <p className="builder-revision-hint">{locale === 'it' ? 'La condivisione richiede una revisione completa e legale.' : 'Sharing requires a complete legal revision.'}</p>}
+      {revisionDirty && revisionId && <p className="builder-revision-hint">{locale === 'it' ? 'Il link condivide l’ultima revisione salvata; le modifiche locali restano private finché non salvi.' : 'The link shares the last saved revision; local changes stay private until you save.'}</p>}
+      {shareUrl && <div className="builder-revision-share"><label htmlFor="builder-share-url">{locale === 'it' ? 'Link read-only' : 'Read-only link'}<input id="builder-share-url" value={shareUrl} readOnly onFocus={(event) => event.target.select()} /></label><button type="button" onClick={() => void copyShareLink()}>{locale === 'it' ? 'Copia link' : 'Copy link'}</button></div>}
+      {(revisionMessage || shareMessage) && <div className="builder-revision-feedback" role={revisionIssues.length || shareIssues.length ? 'alert' : 'status'} aria-live="polite"><p>{revisionMessage ?? shareMessage}</p>{revisionIssues.length > 0 && <ul>{revisionIssues.map((issue, index) => <li key={`revision-${index}-${issue}`}>{issue}</li>)}</ul>}{shareIssues.length > 0 && <ul>{shareIssues.map((issue, index) => <li key={`share-${index}-${issue}`}>{issue}</li>)}</ul>}</div>}
+    </section>
     <section className="builder-showdown" aria-labelledby="builder-showdown-title"><div className="builder-showdown-head"><div><h2 id="builder-showdown-title">Showdown</h2><p>{locale === 'it' ? 'Importa o esporta un team di testo. Le regole Champions vengono controllate dal server.' : 'Import or export a text team. The server checks Champions rules.'}</p></div><fieldset className="builder-showdown-tabs" aria-label={locale === 'it' ? 'Operazione Showdown' : 'Showdown operation'}><button type="button" aria-pressed={showdownMode === 'import'} onClick={() => { setShowdownMode(showdownMode === 'import' ? null : 'import'); setShowdownMessage(null); setShowdownIssues([]); }}>{locale === 'it' ? 'Importa' : 'Import'}</button><button type="button" aria-pressed={showdownMode === 'export'} onClick={() => { setShowdownMode(showdownMode === 'export' ? null : 'export'); setShowdownMessage(null); setShowdownIssues([]); }}>{locale === 'it' ? 'Esporta' : 'Export'}</button></fieldset></div>
       {!showdownReady && <output className="builder-showdown-availability"><CircleAlert size={15} aria-hidden="true" />{catalogLoading ? (locale === 'it' ? 'Caricamento del catalogo verificato…' : 'Loading the verified catalog…') : catalogError ? (locale === 'it' ? 'Servizio catalogo non disponibile: importazione ed esportazione sono sospese.' : 'The catalog service is unavailable: import and export are paused.') : catalogMeta?.dataStatus !== 'certified' ? (locale === 'it' ? 'Importazione ed esportazione disponibili solo con una release verificata. Questa release è ancora un’anteprima; la bozza resta nel browser.' : 'Import and export require a verified release. This release is still a preview; your draft remains in the browser.') : (locale === 'it' ? 'La release è certificata, ma catalogo, legalità o learnset non sono ancora completi.' : 'The release is certified, but catalog, legality, or learnset coverage is incomplete.')}</output>}
       {showdownMode === 'import' && <div className="builder-showdown-body"><label htmlFor="showdown-import-text">{locale === 'it' ? 'Incolla il team Showdown' : 'Paste a Showdown team'}</label><textarea id="showdown-import-text" aria-describedby="showdown-import-help" value={showdownText} onChange={(event) => setShowdownText(event.target.value)} maxLength={16000} rows={8} spellCheck={false} placeholder={locale === 'it' ? 'Incolla qui i set del team…' : 'Paste your team sets here…'} /><p id="showdown-import-help">{locale === 'it' ? 'Il formato Showdown usa i nomi ufficiali inglesi, anche con interfaccia italiana. EV, IV e campi non supportati vengono rifiutati: nessuna conversione viene applicata senza una regola verificata.' : 'Showdown text uses official English names, even when the interface is Italian. Unsupported EV, IV, and format fields are rejected; no conversion is applied without a verified rule.'}</p><button className="builder-showdown-primary" type="button" onClick={() => void runShowdownImport()} disabled={!showdownReady || !showdownText.trim() || showdownBusy}>{showdownBusy ? (locale === 'it' ? 'Importazione…' : 'Importing…') : (locale === 'it' ? 'Importa team' : 'Import team')}</button></div>}
