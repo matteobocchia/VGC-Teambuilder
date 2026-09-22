@@ -31,7 +31,7 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ApiClientError, defaultFormatId, getCatalogContext, getCatalogPokemon, type ApiFormat, type ApiMeta, type ApiOption, type ApiPokemon } from './lib/api';
+import { ApiClientError, defaultFormatId, getCatalogContext, getCatalogPokemon, getTeamRevision, saveTeamRevision, type ApiFormat, type ApiIssue, type ApiMeta, type ApiOption, type ApiPokemon, type ApiTeamSet } from './lib/api';
 
 type Locale = 'it' | 'en';
 type Mode = 'doubles' | 'singles';
@@ -101,7 +101,7 @@ function restoreBuilderSlots(rawSlots: unknown, catalog: Pokemon[] = pokemonCata
     const pokemon = catalog.find((entry) => entry.api?.formId === storedSlot?.pokemonId || entry.name === storedSlot?.pokemonName);
     if (!storedSlot || typeof storedSlot.pokemonName !== 'string' || !pokemon) return null;
     const defaults = setForPokemon(pokemon);
-    return { pokemonName: pokemon.name, pokemonId: pokemon.api?.formId ?? storedSlot.pokemonId, set: { ...cloneSet(defaults), ...storedSlot.set, statPoints: { ...defaults.statPoints, ...storedSlot.set?.statPoints }, moves: Array.isArray(storedSlot.set?.moves) && storedSlot.set.moves.length === 4 ? [...storedSlot.set.moves] : cloneSet(defaults).moves } };
+    return { pokemonName: pokemon.name, pokemonId: pokemon.api?.formId ?? storedSlot.pokemonId, set: { ...cloneSet(defaults), ...storedSlot.set, statPoints: { ...defaults.statPoints, ...storedSlot.set?.statPoints }, moves: Array.isArray(storedSlot.set?.moves) && storedSlot.set.moves.length >= 1 && storedSlot.set.moves.length <= 4 ? [...storedSlot.set.moves] : cloneSet(defaults).moves } };
   });
 }
 
@@ -171,6 +171,81 @@ function viewPokemonFromApi(entry: ApiPokemon): Pokemon {
     baseStats: entry.baseStats,
     api: entry,
   };
+}
+
+function optionId(value: string, options: ApiOption[]) {
+  return options.find((option) => value === option.labels.en || value === option.labels.it || value.startsWith(`${option.labels.en} (`))?.id;
+}
+
+function revisionSlotsFromBuilder(slots: BuilderSlot[], catalog: Pokemon[], format: ApiFormat, types: ApiOption[], natures: ApiOption[]) {
+  const missing: string[] = [];
+  const converted = slots.map((slot, index): ApiTeamSet | null => {
+    if (!slot) return null;
+    const pokemon = catalog.find((entry) => entry.api?.formId === slot.pokemonId || entry.name === slot.pokemonName)?.api;
+    if (!pokemon) { missing.push(`${index + 1}:pokemon`); return null; }
+    const abilityId = optionId(slot.set.ability, pokemon.abilities);
+    const itemId = slot.set.item === 'None' ? null : optionId(slot.set.item, pokemon.items);
+    const natureId = optionId(slot.set.nature, natures);
+    const teraTypeId = format.capabilities.tera ? optionId(slot.set.tera, types) : undefined;
+    const moveIds = slot.set.moves.map((move) => optionId(move, pokemon.learnableMoves));
+    if (!abilityId) missing.push(`${index + 1}:ability`);
+    if (itemId === undefined) missing.push(`${index + 1}:item`);
+    if (!natureId) missing.push(`${index + 1}:nature`);
+    if (format.capabilities.tera && !teraTypeId) missing.push(`${index + 1}:tera`);
+    if (moveIds.some((move) => !move)) missing.push(`${index + 1}:moves`);
+    if (!abilityId || itemId === undefined || !natureId || (format.capabilities.tera && !teraTypeId) || moveIds.some((move) => !move)) return null;
+    return { speciesId: pokemon.speciesId, formId: pokemon.formId, ...(teraTypeId ? { teraTypeId } : {}), itemId, abilityId, natureId, level: 50, statPoints: { ...slot.set.statPoints }, moveIds: moveIds as string[] };
+  });
+  return { slots: converted, missing };
+}
+
+function builderSlotsFromRevision(slots: Array<ApiTeamSet | null>, catalog: Pokemon[], natures: ApiOption[], types: ApiOption[]): BuilderSlot[] | null {
+  const converted = slots.map((set): BuilderSlot | null => {
+    if (!set) return null;
+    const pokemon = catalog.find((entry) => entry.api?.formId === set.formId || entry.api?.speciesId === set.speciesId);
+    if (!pokemon?.api) return null;
+    const api = pokemon.api;
+    const defaults = setForPokemon(pokemon);
+    const tera = optionLabel(types.find((option) => option.id === set.teraTypeId));
+    const item = set.itemId ? optionLabel(api.items.find((option) => option.id === set.itemId)) : 'None';
+    const ability = optionLabel(api.abilities.find((option) => option.id === set.abilityId));
+    const natureOption = optionLabel(natures.find((option) => option.id === set.natureId));
+    const moves = set.moveIds.map((id) => optionLabel(api.learnableMoves.find((option) => option.id === id)));
+    if (!ability || !natureOption || moves.some((move) => !move) || (set.itemId && !item) || (set.teraTypeId && !tera)) return null;
+    return { pokemonId: api.formId, pokemonName: pokemon.name, set: {
+      tera: tera || defaults.tera,
+      item,
+      ability,
+      nature: natureValues[natureOption] ?? natureOption,
+      statPoints: { ...set.statPoints },
+      moves,
+    } };
+  });
+  return converted.length === 6 && slots.every((slot, index) => !slot || converted[index]) ? converted : null;
+}
+
+function revisionErrorMessage(error: ApiClientError, locale: Locale) {
+  if (error.code === 'DATA_UNVERIFIED') return locale === 'it' ? 'Questa release non può certificare una revisione completa. La bozza locale resta disponibile.' : 'This release cannot certify a complete revision. Your local draft remains available.';
+  if (error.code === 'POSTGRESQL_TEAM_REPOSITORY_NOT_CONFIGURED') return locale === 'it' ? 'Il salvataggio server delle revisioni non è ancora configurato. Usa Salva bozza.' : 'Server revision storage is not configured yet. Use Save draft.';
+  if (error.code === 'REVISION_NOT_FOUND') return locale === 'it' ? 'Revisione non trovata sul server. La bozza locale resta disponibile.' : 'Revision not found on the server. Your local draft remains available.';
+  if (error.code === 'REVISION_FORBIDDEN') return locale === 'it' ? 'Questa revisione appartiene a un altro browser.' : 'This revision belongs to another browser.';
+  if (error.code === 'REQUEST_TIMEOUT') return locale === 'it' ? 'Il server impiega troppo tempo. Riprova: la bozza locale è intatta.' : 'The server is taking too long. Retry; your local draft is intact.';
+  return locale === 'it' ? 'Revisione non salvata o caricata. Controlla gli errori e riprova; la bozza locale è intatta.' : 'Revision was not saved or loaded. Check the errors and retry; your local draft is intact.';
+}
+
+function revisionIssueMessage(issue: ApiIssue, locale: Locale) {
+  const names: Record<string, [string, string]> = {
+    ITEM_CLAUSE: ['Strumento duplicato nel team', 'Duplicate held item in team'],
+    SPECIES_CLAUSE: ['Specie duplicata nel team', 'Duplicate species in team'],
+    MOVE_NOT_LEARNABLE: ['Mossa non disponibile per questo Pokémon', 'Move not available to this Pokémon'],
+    ABILITY_FORM_MISMATCH: ['Abilità incompatibile con la forma', 'Ability incompatible with this form'],
+    STAT_POINTS_TOTAL: ['Totale Stat Points superiore a 66', 'Total Stat Points exceeds 66'],
+    DUPLICATE_MOVE: ['Mossa duplicata nel set', 'Duplicate move in set'],
+    DATA_UNVERIFIED: ['Release non verificata', 'Unverified release'],
+  };
+  const location = issue.path.match(/^\/slots\/(\d+)/);
+  const prefix = location ? `Slot ${Number(location[1]) + 1}: ` : '';
+  return `${prefix}${names[issue.code]?.[locale === 'it' ? 0 : 1] ?? (locale === 'it' ? `Controlla ${issue.path} (${issue.code})` : issue.message)}`;
 }
 
 function clampStatPoints(raw: Record<StatKey, number>, changedKey: StatKey): Record<StatKey, number> {
@@ -576,7 +651,7 @@ function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, natureOptions,
   const statEntries = statKeys.map((key) => [statLabel(key, locale), key] as const);
   const sliderLabel = locale === 'it' ? 'cursore' : 'slider';
   const moveOptions: SelectOption[] = pokemon.api?.learnableMoves.map((move) => ({ value: optionLabel(move), label: optionLabel(move, locale) })) ?? Object.values(moveCatalog).map((move) => move.name);
-  const itemOptions: SelectOption[] = pokemon.api?.items.map((item) => ({ value: optionLabel(item), label: optionLabel(item, locale) })) ?? ['Choice Specs', 'Safety Goggles', 'Focus Sash', 'Assault Vest', 'Rocky Helmet', 'Mental Herb', 'Booster Energy'];
+  const itemOptions: SelectOption[] = pokemon.api ? [{ value: 'None', label: locale === 'it' ? 'Nessuno' : 'None' }, ...pokemon.api.items.map((item) => ({ value: optionLabel(item), label: optionLabel(item, locale) }))] : ['None', 'Choice Specs', 'Safety Goggles', 'Focus Sash', 'Assault Vest', 'Rocky Helmet', 'Mental Herb', 'Booster Energy'];
   const abilityOptions: SelectOption[] = pokemon.api?.abilities.map((ability) => ({ value: optionLabel(ability), label: optionLabel(ability, locale) })) ?? ['Protosynthesis', 'Intimidate', 'Grassy Surge', 'Unseen Fist', 'Regenerator', 'Armor Tail'];
   const teraOptions: SelectOption[] = typeOptions.map((type) => ({ value: optionLabel(type), label: optionLabel(type, locale) }));
   const natureLabels: SelectOption[] = natureOptions.map((nature) => ({ value: optionLabel(nature), label: optionLabel(nature, locale) }));
@@ -602,7 +677,7 @@ function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, natureOptions,
     <div className="builder-section-heading"><div><h2>{copyForLocale.statPoints}</h2><p>{copyForLocale.statHint}</p></div><strong>{Object.values(set.statPoints).reduce((sum, value) => sum + value, 0)} / 66</strong></div>
     <div className="builder-stat-grid">{statEntries.map(([label, key]) => <label className="builder-stat-row" key={key}><span>{label}</span><input type="number" min={0} max={32} value={set.statPoints[key]} aria-label={`${label} · ${copyForLocale.statPoints}`} onChange={(event) => updateStat(key, Number(event.target.value))} /><input type="range" min={0} max={32} value={set.statPoints[key]} aria-label={`${label} · ${copyForLocale.statPoints} · ${sliderLabel}`} onChange={(event) => updateStat(key, Number(event.target.value))} /><b>{derivedStats[key]}</b></label>)}</div>
     <div className="builder-divider" />
-    <div className="builder-section-heading"><div><h2>{copyForLocale.moves}</h2><p>{copyForLocale.moveHint}</p></div><span>4 / 4</span></div>
+    <div className="builder-section-heading"><div><h2>{copyForLocale.moves}</h2><p>{copyForLocale.moveHint}</p></div><span>{set.moves.length} / 4</span></div>
     <div className="builder-move-grid">{set.moves.map((move, index) => <label className="builder-move-field" key={`${index}-${move}`}><span>{index + 1}</span><span className="select-wrap"><select value={move} aria-label={`${copyForLocale.moves} ${index + 1}`} onChange={(event) => updateMove(index, event.target.value)}>{moveOptions.map((option) => { const normalized = typeof option === 'string' ? { value: option, label: option } : option; return <option key={normalized.value} value={normalized.value}>{normalized.label}</option>; })}</select><ChevronDown size={15} aria-hidden="true" /></span></label>)}</div>
   </div>;
 }
@@ -615,6 +690,11 @@ function BuilderWorkspace() {
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [query, setQuery] = useState('');
   const [saved, setSaved] = useState(false);
+  const [revisionId, setRevisionId] = useState<string | null>(null);
+  const [revisionDirty, setRevisionDirty] = useState(false);
+  const [revisionBusy, setRevisionBusy] = useState<'save' | 'load' | null>(null);
+  const [revisionMessage, setRevisionMessage] = useState<string | null>(null);
+  const [revisionIssues, setRevisionIssues] = useState<string[]>([]);
   const [catalogEntries, setCatalogEntries] = useState<Pokemon[] | null>(null);
   const [catalogMeta, setCatalogMeta] = useState<ApiMeta | null>(null);
   const [catalogFormat, setCatalogFormat] = useState<ApiFormat | null>(null);
@@ -623,6 +703,7 @@ function BuilderWorkspace() {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [storedSlots, setStoredSlots] = useState<unknown[] | null>(null);
   const [storedCatalog, setStoredCatalog] = useState<Pokemon[] | null>(null);
+  const initialSlotsApplied = useRef(false);
   const copyForLocale = copy[locale];
   const loadCatalog = useCallback(async (signal?: AbortSignal) => {
     setCatalogLoading(true);
@@ -635,12 +716,18 @@ function BuilderWorkspace() {
       const entries = response.data.pokemon.map(viewPokemonFromApi);
       setCatalogEntries(entries);
       setCatalogMeta(response.meta);
-      setSlots((current) => restoreBuilderSlots(storedSlots ?? current, entries));
+      if (!initialSlotsApplied.current) {
+        setSlots((current) => restoreBuilderSlots(storedSlots ?? current, entries));
+        initialSlotsApplied.current = true;
+      }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       const clientError = error instanceof ApiClientError ? error : new ApiClientError('The data service is unavailable.', 503, 'DATA_SERVICE_UNAVAILABLE');
       setCatalogError(clientError);
-      if (storedSlots) setSlots(restoreBuilderSlots(storedSlots, pokemonCatalog));
+      if (storedSlots && !initialSlotsApplied.current) {
+        setSlots(restoreBuilderSlots(storedSlots, pokemonCatalog));
+        initialSlotsApplied.current = true;
+      }
     } finally {
       if (!signal?.aborted) setCatalogLoading(false);
     }
@@ -658,9 +745,10 @@ function BuilderWorkspace() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
-        const stored = JSON.parse(window.localStorage.getItem('vgc-forge:builder-v1') ?? '{}') as { locale?: Locale; teamName?: string; slots?: BuilderSlot[]; selectedSlot?: number };
+        const stored = JSON.parse(window.localStorage.getItem('vgc-forge:builder-v1') ?? '{}') as { locale?: Locale; teamName?: string; slots?: BuilderSlot[]; selectedSlot?: number; revisionId?: string };
         if (stored.locale === 'en') setLocale('en');
         if (typeof stored.teamName === 'string') setTeamName(stored.teamName);
+        if (typeof stored.revisionId === 'string') setRevisionId(stored.revisionId);
         const cachedCatalog = Array.isArray((stored as { catalog?: unknown }).catalog) ? (stored as { catalog: Pokemon[] }).catalog : null;
         if (Array.isArray(stored.slots)) {
           setStoredSlots(stored.slots);
@@ -677,6 +765,7 @@ function BuilderWorkspace() {
   useEffect(() => { document.documentElement.lang = locale; }, [locale]);
 
   const updateSlot = (patch: Partial<PokemonSet>) => {
+    setRevisionDirty(true);
     setSlots((current) => current.map((slot, index) => index === selectedSlot && slot ? { ...slot, set: { ...slot.set, ...patch } } : slot));
   };
   const choosePokemon = (pokemonName: string) => {
@@ -685,6 +774,7 @@ function BuilderWorkspace() {
     const pokemonKey = pokemon.api?.formId ?? pokemon.name;
     if (takenNames.has(pokemonKey)) return;
     setSlots((current) => current.map((slot, index) => index === selectedSlot ? { pokemonName: pokemon.name, pokemonId: pokemonKey, set: setForPokemon(pokemon) } : slot));
+    setRevisionDirty(true);
     setQuery('');
   };
   const addPokemon = () => {
@@ -693,18 +783,91 @@ function BuilderWorkspace() {
   };
   const removePokemon = () => {
     setSlots((current) => current.map((slot, index) => index === selectedSlot ? null : slot));
+    setRevisionDirty(true);
     setQuery('');
   };
-  const saveBuilder = () => {
-    window.localStorage.setItem('vgc-forge:builder-v1', JSON.stringify({ locale, teamName, slots, selectedSlot, catalog: catalogEntries ?? storedCatalog ?? undefined }));
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 1800);
+  const saveBuilder = (nextRevisionId: string | null = revisionId) => {
+    try {
+      window.localStorage.setItem('vgc-forge:builder-v1', JSON.stringify({ locale, teamName, slots, selectedSlot, revisionId: nextRevisionId, catalog: catalogEntries ?? storedCatalog ?? undefined }));
+      setSaved(true);
+      setRevisionDirty(false);
+      window.setTimeout(() => setSaved(false), 1800);
+    } catch {
+      setRevisionMessage(locale === 'it' ? 'Il browser non ha salvato la bozza locale.' : 'The browser could not save the local draft.');
+    }
+  };
+
+  const saveRevision = async () => {
+    setRevisionMessage(null);
+    setRevisionIssues([]);
+    if (!catalogFormat || !catalogMeta?.releaseId || !catalogEntries) {
+      setRevisionMessage(locale === 'it' ? 'Carica il catalogo server prima di salvare una revisione.' : 'Load the server catalog before saving a revision.');
+      return;
+    }
+    const converted = revisionSlotsFromBuilder(slots, catalogEntries, catalogFormat, catalogOptions.types, catalogOptions.natures);
+    if (converted.missing.length) {
+      setRevisionMessage(locale === 'it' ? 'Alcuni valori della bozza non appartengono al catalogo corrente. Correggili prima di salvare.' : 'Some draft values are not in the current catalog. Correct them before saving.');
+      setRevisionIssues(converted.missing.map((field) => `${locale === 'it' ? 'Slot' : 'Slot'} ${field.replace(':', ' · ')}`));
+      return;
+    }
+    setRevisionBusy('save');
+    try {
+      const response = await saveTeamRevision({ name: teamName.trim() || copyForLocale.newTeam, formatId: catalogFormat.id, dataReleaseId: catalogMeta.releaseId, locale, slots: converted.slots });
+      const id = response.data.revision.id;
+      setRevisionId(id);
+      saveBuilder(id);
+      const status = response.data.revision.status;
+      setRevisionMessage(locale === 'it' ? `Revisione ${id.slice(0, 8)} salvata · ${status === 'blocked' ? 'legalità non verificata' : status === 'draft' ? 'bozza incompleta' : 'legale'}.` : `Revision ${id.slice(0, 8)} saved · ${status === 'blocked' ? 'legality unverified' : status === 'draft' ? 'incomplete draft' : 'legal'}.`);
+    } catch (error) {
+      const clientError = error instanceof ApiClientError ? error : new ApiClientError('The data service is unavailable.', 503);
+      setRevisionMessage(revisionErrorMessage(clientError, locale));
+      setRevisionIssues(clientError.issues.map((issue) => revisionIssueMessage(issue, locale)));
+    } finally {
+      setRevisionBusy(null);
+    }
+  };
+  const loadRevision = async () => {
+    if (!revisionId || revisionBusy) return;
+    if (revisionDirty && !window.confirm(locale === 'it' ? 'Caricare la revisione salvata? Le modifiche non salvate nella bozza attuale verranno sostituite.' : 'Load the saved revision? Unsaved changes in the current draft will be replaced.')) return;
+    setRevisionBusy('load');
+    setRevisionMessage(null);
+    setRevisionIssues([]);
+    try {
+      const response = await getTeamRevision(revisionId);
+      const revision = response.data;
+      if (!catalogFormat || revision.formatId !== catalogFormat.id || revision.dataReleaseId !== catalogMeta?.releaseId) {
+        setRevisionMessage(locale === 'it' ? 'La revisione usa un formato o una release diversi dal catalogo corrente.' : 'This revision uses a different format or release from the current catalog.');
+        return;
+      }
+      const restored = builderSlotsFromRevision(revision.slots, catalogEntries ?? [], catalogOptions.natures, catalogOptions.types);
+      if (!restored) {
+        setRevisionMessage(locale === 'it' ? 'La revisione contiene Pokémon assenti dal catalogo corrente.' : 'This revision contains Pokémon missing from the current catalog.');
+        return;
+      }
+      setTeamName(revision.name);
+      setSlots(restored);
+      setSelectedSlot(0);
+      setRevisionDirty(false);
+      try {
+        window.localStorage.setItem('vgc-forge:builder-v1', JSON.stringify({ locale, teamName: revision.name, slots: restored, selectedSlot: 0, revisionId: revision.id, catalog: catalogEntries ?? undefined }));
+      } catch {
+        // Server revision remains available even if browser storage is disabled.
+      }
+      setRevisionMessage(locale === 'it' ? `Revisione ${revision.id.slice(0, 8)} caricata.` : `Revision ${revision.id.slice(0, 8)} loaded.`);
+    } catch (error) {
+      const clientError = error instanceof ApiClientError ? error : new ApiClientError('The data service is unavailable.', 503);
+      setRevisionMessage(revisionErrorMessage(clientError, locale));
+      setRevisionIssues(clientError.issues.map((issue) => revisionIssueMessage(issue, locale)));
+    } finally {
+      setRevisionBusy(null);
+    }
   };
 
   return <main className="forge-shell builder-shell">
-    <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath="/" saved={saved} onSave={saveBuilder} showSave />
+    <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath="/" saved={saved} onSave={() => saveBuilder()} showSave />
     <div className="format-banner" role={catalogError ? 'alert' : undefined} aria-live="polite"><CircleAlert size={14} /><span>{catalogLoading ? copyForLocale.loadingCatalog : catalogError ? catalogErrorMessage(catalogError, copyForLocale) : catalogStatusMessage(catalogMeta, copyForLocale)}</span>{catalogMeta?.releaseId && <small>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {catalogMeta.releaseId}</small>}{catalogError ? <button type="button" onClick={() => void loadCatalog()}>{copyForLocale.retry}</button> : <span className="builder-save-note">{saved ? copyForLocale.savedLocally : copyForLocale.autoSave}</span>}</div>
     <section className="builder-header"><div><h1>{teamName || copyForLocale.newTeam}</h1><p>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {slots.filter(Boolean).length} / 6</p></div><label className="builder-name-field"><span>{copyForLocale.teamName}</span><input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder={copyForLocale.newTeam} /></label></section>
+    <section className="builder-revisions" aria-label={locale === 'it' ? 'Revisioni del team' : 'Team revisions'}><div className="builder-revision-copy"><strong>{locale === 'it' ? 'Revisioni server' : 'Server revisions'}</strong><span>{revisionId ? `${locale === 'it' ? 'Revisione collegata' : 'Linked revision'} · ${revisionId.slice(0, 8)}` : (locale === 'it' ? 'Nessuna revisione server salvata' : 'No server revision saved')}{revisionDirty ? ` · ${locale === 'it' ? 'Modifiche non salvate' : 'Unsaved changes'}` : ''}</span></div><div className="builder-revision-actions"><button type="button" onClick={() => void saveRevision()} disabled={!!revisionBusy || catalogLoading || !!catalogError}>{revisionBusy === 'save' ? (locale === 'it' ? 'Salvataggio…' : 'Saving…') : (locale === 'it' ? 'Salva revisione' : 'Save revision')}</button><button type="button" onClick={() => void loadRevision()} disabled={!revisionId || !!revisionBusy || catalogLoading || !!catalogError}>{revisionBusy === 'load' ? (locale === 'it' ? 'Caricamento…' : 'Loading…') : (locale === 'it' ? 'Carica revisione' : 'Load revision')}</button></div>{revisionMessage && <div className="builder-revision-feedback" role={revisionIssues.length ? 'alert' : 'status'}><p>{revisionMessage}</p>{revisionIssues.length > 0 && <ul>{revisionIssues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul>}</div>}</section>
     <div className="builder-grid">
       <aside className="builder-roster" aria-label={copyForLocale.team}><div className="builder-roster-heading"><div><h2>{copyForLocale.team}</h2><p>{catalogError ? catalogErrorMessage(catalogError, copyForLocale) : copyForLocale.catalogHint}</p></div><strong>{slots.filter(Boolean).length} / 6</strong></div><div className="builder-slots">{slots.map((slot, index) => { const pokemon = slot ? activeCatalog.find((entry) => entry.api?.formId === slot.pokemonId || entry.name === slot.pokemonName) : null; return <button type="button" key={index} aria-pressed={selectedSlot === index} className={`builder-slot ${selectedSlot === index ? 'builder-slot-active' : ''} ${slot ? '' : 'builder-slot-empty'}`} onClick={() => setSelectedSlot(index)}><span className="builder-slot-number">{index + 1}</span>{pokemon ? <span className="builder-slot-copy"><strong>{locale === 'it' ? pokemon.nameIt ?? pokemon.name : pokemon.name}</strong><small>{locale === 'it' ? pokemon.roleIt ?? pokemon.role : pokemon.role}</small><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span></span> : <span className="builder-slot-copy"><strong>{copyForLocale.emptySlot}</strong><small>{copyForLocale.addPokemon}</small></span>}</button>; })}</div><button type="button" className="add-button" onClick={addPokemon} disabled={slots.every(Boolean) || catalogLoading}><Plus size={16} /> {copyForLocale.addPokemon}</button></aside>
       <section className="builder-editor" aria-live="polite">{selected && activeCatalog.find((entry) => entry.api?.formId === selected.pokemonId || entry.name === selected.pokemonName) ? <BuilderSetEditor copyForLocale={copyForLocale} locale={locale} pokemon={activeCatalog.find((entry) => entry.api?.formId === selected.pokemonId || entry.name === selected.pokemonName)!} slot={selected} natureOptions={catalogOptions.natures} typeOptions={catalogOptions.types} onUpdate={updateSlot} onRemove={removePokemon} /> : <div className="builder-empty-state">{catalogLoading ? <output>{copyForLocale.loadingCatalog}</output> : catalogError ? <div role="alert"><p>{catalogErrorMessage(catalogError, copyForLocale)}</p><button type="button" onClick={() => void loadCatalog()}>{copyForLocale.retry}</button></div> : <><div className="builder-empty-icon"><Plus size={22} /></div><h2>{copyForLocale.selectSlot}</h2><p>{copyForLocale.emptyBuilderHelp}</p><label className="builder-search"><span>{copyForLocale.searchPokemon}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copyForLocale.searchPokemon} /></label><div className="catalog-heading"><h2>{copyForLocale.catalog}</h2><span>{visibleCatalog.length}</span></div><div className="catalog-list">{visibleCatalog.map((pokemon) => <button type="button" className="catalog-option" key={pokemon.name} onClick={() => choosePokemon(pokemon.name)}><span className="pokemon-monogram">{pokemon.name.slice(0, 2).toUpperCase()}</span><span><strong>{locale === 'it' ? pokemon.nameIt ?? pokemon.name : pokemon.name}</strong><small>{locale === 'it' ? pokemon.roleIt ?? pokemon.role : pokemon.role}</small></span><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span><ArrowRight size={16} aria-hidden="true" /></button>)}{visibleCatalog.length === 0 && <p className="catalog-empty">{copyForLocale.noResults}</p>}</div></>}</div>}</section>

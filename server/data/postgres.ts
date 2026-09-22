@@ -1,10 +1,15 @@
 import { isNodePostgresRuntime } from './source';
-import type { CatalogPokemon, DataMeta, FormatProfile, Labels, Option, StatValues } from '../domain/types';
+import type { CatalogPokemon, DataMeta, FormatProfile, Labels, Option, StatValues, TeamRevision } from '../domain/types';
 
 type QueryResult<Row> = { rows: Row[] };
 type Pool = {
   query<Row>(text: string, values?: readonly unknown[]): Promise<QueryResult<Row>>;
+  connect(): Promise<PoolClient>;
   end(): Promise<void>;
+};
+type PoolClient = {
+  query<Row>(text: string, values?: readonly unknown[]): Promise<QueryResult<Row>>;
+  release(): void;
 };
 
 type PgModule = { Pool: new (options: Record<string, unknown>) => Pool };
@@ -109,6 +114,82 @@ export async function closePostgresPool(): Promise<void> {
 
 export async function pingPostgres(): Promise<void> {
   await query<{ ok: number }>('SELECT 1 AS ok');
+}
+
+/** A new POST creates one immutable snapshot and its six slot rows atomically. */
+export async function savePostgresRevision(revision: TeamRevision): Promise<void> {
+  const client = await (await getPool()).connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO teams (team_id, format_id, data_release_id, owner_id, name)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [revision.id, revision.formatId, revision.dataReleaseId, revision.ownerId, revision.name],
+    );
+    await client.query(
+      `INSERT INTO team_revisions
+        (revision_id, team_id, revision_number, format_id, data_release_id, locale, status, snapshot, created_at)
+       VALUES ($1, $1, 1, $2, $3, $4, $5, $6::jsonb, $7)`,
+      [revision.id, revision.formatId, revision.dataReleaseId, revision.locale, revision.status, JSON.stringify({ slots: revision.slots }), revision.createdAt],
+    );
+    for (let index = 0; index < 6; index += 1) {
+      const set = revision.slots[index];
+      await client.query(
+        `INSERT INTO team_slots (revision_id, slot, set_payload, validation_status)
+         VALUES ($1, $2, $3::jsonb, $4)`,
+        [revision.id, index + 1, set ? JSON.stringify(set) : null, set ? 'valid' : 'empty'],
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    if (error instanceof PostgresRepositoryError) throw error;
+    throw new PostgresRepositoryError('POSTGRESQL_UNAVAILABLE', 'The team revision could not be saved.', { cause: error });
+  } finally {
+    client.release();
+  }
+}
+
+type RevisionRow = {
+  revision_id: string;
+  name: string;
+  format_id: string;
+  data_release_id: string;
+  locale: TeamRevision['locale'];
+  status: TeamRevision['status'];
+  owner_id: string;
+  snapshot: unknown;
+  created_at: Date;
+  updated_at: Date;
+};
+
+export async function getPostgresRevision(id: string): Promise<TeamRevision | undefined> {
+  const rows = await query<RevisionRow>(
+    `SELECT r.revision_id, t.name, r.format_id, r.data_release_id, r.locale, r.status,
+            t.owner_id, r.snapshot, r.created_at, t.updated_at
+       FROM team_revisions r
+       JOIN teams t ON t.team_id = r.team_id
+      WHERE r.revision_id = $1
+      LIMIT 1`,
+    [id],
+  );
+  const row = rows[0];
+  if (!row) return undefined;
+  const snapshot = objectValue(row.snapshot);
+  const slots = snapshot?.slots;
+  if (!Array.isArray(slots) || slots.length !== 6) throw new PostgresRepositoryError('DATA_RELEASE_CORRUPT', 'Saved team revision snapshot is invalid.');
+  return {
+    id: row.revision_id,
+    name: row.name,
+    formatId: row.format_id,
+    dataReleaseId: row.data_release_id,
+    locale: row.locale,
+    status: row.status,
+    ownerId: row.owner_id,
+    slots: slots as TeamRevision['slots'],
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
 }
 
 export async function getPostgresContext(formatId: string, releaseId: string): Promise<RuntimeContext | undefined> {

@@ -1,5 +1,5 @@
 import { findCatalogPokemon, getFormat, natureOptions } from './repository';
-import type { CatalogPokemon, CompetitiveSet, Issue, StatValues } from './types';
+import type { CatalogPokemon, CompetitiveSet, FormatProfile, Issue, StatValues } from './types';
 import { statKeys } from './types';
 
 export const issue = (path: string, code: string, message: string, blocking = true, details?: Record<string, unknown>): Issue => ({ path, code, message, blocking, ...(details ? { details } : {}) });
@@ -13,6 +13,12 @@ function isStatValues(value: unknown): value is StatValues {
 }
 
 export type SetValidation = { set: CompetitiveSet | null; stats: StatValues | null; issues: Issue[]; pokemon?: CatalogPokemon };
+
+export type ValidationCatalog = {
+  format: FormatProfile;
+  pokemon: CatalogPokemon[];
+  natureIds: string[];
+};
 
 const natureMultipliers: Record<string, Partial<Record<keyof StatValues, number>>> = {
   'nature:adamant': { atk: 1.1, spa: 0.9 },
@@ -32,7 +38,7 @@ function deriveStats(pokemon: CatalogPokemon, set: CompetitiveSet): StatValues {
   }, {} as StatValues);
 }
 
-export function validateSet(input: unknown, formatId: string): SetValidation {
+export function validateSet(input: unknown, formatId: string, catalog?: ValidationCatalog): SetValidation {
   const issues: Issue[] = [];
   if (!isRecord(input)) return { set: null, stats: null, issues: [issue('/set', 'SET_OBJECT_REQUIRED', 'Set must be an object.')] };
 
@@ -44,17 +50,21 @@ export function validateSet(input: unknown, formatId: string): SetValidation {
   }
 
   const speciesId = input.speciesId;
-  const pokemon = typeof speciesId === 'string' ? findCatalogPokemon(speciesId) : undefined;
+  const formId = input.formId;
+  const pokemon = typeof speciesId === 'string'
+    ? (catalog
+      ? catalog.pokemon.find((candidate) => (typeof formId === 'string' && candidate.formId === formId && candidate.speciesId === speciesId) || candidate.id === speciesId || (candidate.speciesId === speciesId && typeof formId !== 'string'))
+      : findCatalogPokemon(typeof formId === 'string' ? formId : speciesId))
+    : undefined;
   if (!pokemon) issues.push(issue('/set/speciesId', 'UNKNOWN_SPECIES', 'Species is not present in the selected release.'));
 
   const level = input.level;
   if (level !== 50) issues.push(issue('/set/level', 'LEVEL_UNSUPPORTED', 'Champions sets must use level 50.'));
 
-  const format = getFormat(formatId);
+  const format = catalog?.format ?? getFormat(formatId);
   if (!format) issues.push(issue('/formatId', 'UNKNOWN_FORMAT', 'Format is not available.'));
   else if (pokemon && pokemon.legalityStatus !== 'unknown' && !pokemon.legalFormats.includes(format.id)) issues.push(issue('/set/speciesId', 'FORMAT_INCOMPATIBLE', 'Species/form is not available in this format.'));
 
-  const formId = input.formId;
   if (formId !== undefined && (typeof formId !== 'string' || !pokemon || formId !== pokemon.formId)) issues.push(issue('/set/formId', 'FORM_MISMATCH', 'Form does not belong to the selected species.'));
 
   const abilityId = input.abilityId;
@@ -66,7 +76,7 @@ export function validateSet(input: unknown, formatId: string): SetValidation {
 
   const natureId = input.natureId;
   if (typeof natureId !== 'string') issues.push(issue('/set/natureId', 'NATURE_REQUIRED', 'Nature is required.'));
-  else if (!natureOptions.some((candidate) => candidate.id === natureId)) issues.push(issue('/set/natureId', 'UNKNOWN_NATURE', 'Nature is not present in the selected release.'));
+  else if (!(catalog?.natureIds ?? natureOptions.map((candidate) => candidate.id)).includes(natureId)) issues.push(issue('/set/natureId', 'UNKNOWN_NATURE', 'Nature is not present in the selected release.'));
 
   if (input.teraTypeId !== undefined && !format?.capabilities.tera) issues.push(issue('/set/teraTypeId', 'UNSUPPORTED_FIELD', 'This format release does not expose Tera Type.', true, { field: 'teraTypeId' }));
 
@@ -110,9 +120,9 @@ export function validateSet(input: unknown, formatId: string): SetValidation {
   return { set: normalized, stats: deriveStats(pokemon, normalized), issues, pokemon };
 }
 
-export function validateTeam(slots: unknown, formatId: string): { slots: Array<CompetitiveSet | null>; stats: Array<StatValues | null>; issues: Issue[]; complete: boolean } {
+export function validateTeam(slots: unknown, formatId: string, catalog?: ValidationCatalog): { slots: Array<CompetitiveSet | null>; stats: Array<StatValues | null>; issues: Issue[]; complete: boolean } {
   const issues: Issue[] = [];
-  const format = getFormat(formatId);
+  const format = catalog?.format ?? getFormat(formatId);
   if (!Array.isArray(slots) || slots.length !== 6) return { slots: [], stats: [], issues: [issue('/slots', 'SIX_SLOTS_REQUIRED', 'A team revision must contain exactly six slots.')], complete: false };
   const normalized: Array<CompetitiveSet | null> = [];
   const derived: Array<StatValues | null> = [];
@@ -120,7 +130,7 @@ export function validateTeam(slots: unknown, formatId: string): { slots: Array<C
   const items = new Set<string>();
   slots.forEach((value, index) => {
     if (value === null) { normalized.push(null); derived.push(null); return; }
-    const result = validateSet(value, formatId);
+    const result = validateSet(value, formatId, catalog);
     result.issues.forEach((current) => issues.push({ ...current, path: `/slots/${index}${current.path.replace('/set', '')}` }));
     normalized.push(result.set);
     derived.push(result.stats);

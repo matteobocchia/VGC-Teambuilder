@@ -78,11 +78,38 @@ export type ApiFormat = {
 
 type ApiEnvelope<T> = { data: T; meta: ApiMeta };
 
+export type ApiIssue = { path: string; code: string; message: string; blocking: boolean };
+
+export type ApiTeamSet = {
+  speciesId: string;
+  formId?: string;
+  teraTypeId?: string;
+  itemId: string | null;
+  abilityId: string;
+  natureId: string;
+  level: 50;
+  statPoints: ApiStatValues;
+  moveIds: string[];
+};
+
+export type ApiTeamRevision = {
+  id: string;
+  name: string;
+  formatId: string;
+  dataReleaseId: string;
+  locale: ApiLocale;
+  slots: Array<ApiTeamSet | null>;
+  status: 'draft' | 'blocked' | 'legal';
+  createdAt: string;
+  updatedAt: string;
+};
+
 export class ApiClientError extends Error {
   constructor(
     message: string,
     public readonly status: number,
     public readonly code?: string,
+    public readonly issues: ApiIssue[] = [],
   ) {
     super(message);
     this.name = 'ApiClientError';
@@ -91,34 +118,38 @@ export class ApiClientError extends Error {
 
 const defaultFormatId = 'champions-regulation-mb-doubles';
 
-async function getJson<T>(path: string, signal?: AbortSignal): Promise<ApiEnvelope<T>> {
+async function requestJson<T>(path: string, options: { signal?: AbortSignal; method?: 'GET' | 'POST'; body?: unknown } = {}): Promise<ApiEnvelope<T>> {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), 12_000);
   const abortCaller = () => controller.abort();
-  signal?.addEventListener('abort', abortCaller, { once: true });
+  options.signal?.addEventListener('abort', abortCaller, { once: true });
   try {
-    const response = await fetch(path, { headers: { Accept: 'application/json' }, signal: controller.signal });
-    let payload: (ApiEnvelope<T> & { issues?: Array<{ code?: string; message?: string }> }) | null = null;
+    const response = await fetch(path, { method: options.method ?? 'GET', headers: { Accept: 'application/json', ...(options.method === 'POST' ? { 'Content-Type': 'application/json' } : {}) }, body: options.method === 'POST' ? JSON.stringify(options.body) : undefined, signal: controller.signal });
+    let payload: (ApiEnvelope<T> & { issues?: ApiIssue[] }) | null = null;
     try {
-      payload = (await response.json()) as ApiEnvelope<T> & { issues?: Array<{ code?: string; message?: string }> };
+      payload = (await response.json()) as ApiEnvelope<T> & { issues?: ApiIssue[] };
     } catch {
       throw new ApiClientError('The data service returned an invalid response.', response.status, 'INVALID_API_RESPONSE');
     }
     if (!response.ok) {
       const apiIssue = payload?.issues?.[0];
-      throw new ApiClientError(apiIssue?.message ?? 'The data service is unavailable.', response.status, apiIssue?.code ?? 'DATA_SERVICE_UNAVAILABLE');
+      throw new ApiClientError(apiIssue?.message ?? 'The data service is unavailable.', response.status, apiIssue?.code ?? 'DATA_SERVICE_UNAVAILABLE', payload?.issues ?? []);
     }
     if (!payload || payload.data === undefined || !payload.meta) throw new ApiClientError('The data service returned an invalid response.', response.status, 'INVALID_API_RESPONSE');
     return payload;
   } catch (error) {
     if (error instanceof ApiClientError) throw error;
-    if (signal?.aborted) throw error;
+    if (options.signal?.aborted) throw error;
     if (controller.signal.aborted) throw new ApiClientError('The data service timed out.', 408, 'REQUEST_TIMEOUT');
     throw new ApiClientError('The data service is unavailable.', 503, 'DATA_SERVICE_UNAVAILABLE');
   } finally {
     globalThis.clearTimeout(timeout);
-    signal?.removeEventListener('abort', abortCaller);
+    options.signal?.removeEventListener('abort', abortCaller);
   }
+}
+
+async function getJson<T>(path: string, signal?: AbortSignal): Promise<ApiEnvelope<T>> {
+  return requestJson<T>(path, { signal });
 }
 
 export async function getCatalogContext(options: { formatId?: string; dataReleaseId?: string; signal?: AbortSignal } = {}) {
@@ -142,6 +173,14 @@ export async function getCatalogPokemon(options: { formatId?: string; dataReleas
     cursor = page.data.nextCursor;
   }
   return { ...first, data: { ...first.data, pokemon: allPokemon, nextCursor: undefined } };
+}
+
+export async function saveTeamRevision(input: { name: string; formatId: string; dataReleaseId: string; locale: ApiLocale; slots: Array<ApiTeamSet | null> }, signal?: AbortSignal) {
+  return requestJson<{ revision: ApiTeamRevision; stats: Array<ApiStatValues | null>; issues: ApiIssue[] }>('/api/v1/teams/revisions', { method: 'POST', body: input, signal });
+}
+
+export async function getTeamRevision(id: string, signal?: AbortSignal) {
+  return getJson<ApiTeamRevision>(`/api/v1/teams/revisions/${encodeURIComponent(id)}`, signal);
 }
 
 export { defaultFormatId };

@@ -232,6 +232,16 @@ td strong { font-size: 11px; }
 .builder-shell { min-height: 100vh; }
 .builder-save-note { margin-left: auto; color: var(--muted); font-size: 10px; }
 .builder-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; max-width: 1380px; margin: 0 auto; padding: 32px 28px 18px; }
+.builder-revisions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; max-width: 1324px; margin: 0 auto 18px; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--paper-strong); }
+.builder-revision-copy { display: grid; gap: 3px; min-width: 0; margin-inline-end: auto; }
+.builder-revision-copy strong { font-size: 12px; }
+.builder-revision-copy span { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.builder-revision-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.builder-revision-actions button { min-height: 44px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--white); color: var(--ink); font-size: 11px; font-weight: 800; }
+.builder-revision-actions button:first-child { background: var(--lime); }
+.builder-revision-actions button:disabled { opacity: .55; cursor: not-allowed; }
+.builder-revision-feedback { flex-basis: 100%; padding-top: 8px; border-top: 1px solid var(--line-soft); font-size: 11px; line-height: 1.4; }
+.builder-revision-feedback ul { margin: 6px 0 0; padding-inline-start: 18px; }
 .builder-header h1 { font-size: clamp(28px, 4vw, 46px); line-height: .95; }
 .builder-header p { margin-top: 9px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .builder-name-field { display: grid; gap: 6px; min-width: min(300px, 100%); }
@@ -296,6 +306,7 @@ td strong { font-size: 11px; }
 
 @media (max-width: 850px) {
   .builder-header { align-items: stretch; flex-direction: column; padding: 25px 16px 16px; }
+  .builder-revisions { margin-inline: 16px; }
   .builder-name-field { min-width: 0; }
   .builder-grid { grid-template-columns: 1fr; padding: 0 16px 32px; }
   .builder-roster { position: static; }
