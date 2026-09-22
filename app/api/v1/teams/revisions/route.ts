@@ -1,6 +1,6 @@
 import { FORMAT_ID, RELEASE_ID } from '@/server/domain/repository';
 import { revisionStore } from '@/server/domain/store';
-import { getAnonymousId, failure, readJson, resolveContext, success, withAnonymousCookie } from '@/server/http';
+import { getAnonymousId, failure, readJson, resolveRuntimeContext, success, withAnonymousCookie } from '@/server/http';
 import { issue, validateTeam } from '@/server/domain/validation';
 import type { TeamRevision } from '@/server/domain/types';
 
@@ -10,8 +10,9 @@ export async function POST(request: Request) {
   const body = parsed.value as Record<string, unknown>;
   const formatId = typeof body.formatId === 'string' ? body.formatId : FORMAT_ID;
   const releaseId = typeof body.dataReleaseId === 'string' ? body.dataReleaseId : RELEASE_ID;
-  const context = resolveContext(new Request(`https://vgc.local/api/v1/teams/revisions?formatId=${encodeURIComponent(formatId)}&dataReleaseId=${encodeURIComponent(releaseId)}`));
+  const context = await resolveRuntimeContext(new Request(`https://vgc.local/api/v1/teams/revisions?formatId=${encodeURIComponent(formatId)}&dataReleaseId=${encodeURIComponent(releaseId)}`));
   if (context.response) return context.response;
+  if (context.runtime === 'postgresql') return failure([issue('/slots', 'POSTGRESQL_TEAM_REPOSITORY_NOT_CONFIGURED', 'Team revisions are not yet connected to the PostgreSQL repository.', true)], 503, context.meta ?? {});
   const validation = validateTeam(body.slots, formatId);
   if (validation.issues.some((current) => current.blocking && current.code !== 'DATA_UNVERIFIED')) return failure(validation.issues, 422);
   if (validation.complete) return failure([issue('/dataReleaseId', 'DATA_UNVERIFIED', 'This provisional release cannot certify a complete team.', true, { dataStatus: context.meta?.dataStatus })], 422);

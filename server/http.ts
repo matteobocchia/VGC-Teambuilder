@@ -1,5 +1,6 @@
 import { dataMeta, getFormat, getRelease, makeMeta, FORMAT_ID, RELEASE_ID } from './domain/repository';
-import { dataSourceMeta, getDataSourceState } from './data/source';
+import { configuredFormatId, configuredReleaseId, dataSourceMeta, getDataSourceState } from './data/source';
+import { getPostgresContext, PostgresRepositoryError, type RuntimeContext } from './data/postgres';
 import type { DataMeta, Issue } from './domain/types';
 import { issue } from './domain/validation';
 
@@ -17,7 +18,9 @@ export function ensureDataSource(): Response | undefined {
   const code = state.reason ?? 'DATA_SOURCE_UNAVAILABLE';
   const message = code === 'DATABASE_URL_REQUIRED'
     ? 'DATABASE_URL is required outside local development; bundled preview data is disabled.'
-    : 'PostgreSQL is configured, but its server-side adapter is not available yet.';
+    : code === 'POSTGRESQL_RUNTIME_UNSUPPORTED'
+      ? 'PostgreSQL is configured, but this runtime does not support the Node PostgreSQL adapter.'
+      : 'PostgreSQL is configured, but its server-side adapter is not available.';
   return failure([{ path: '/', code, message, blocking: true }], 503, dataSourceMeta());
 }
 
@@ -33,6 +36,59 @@ export function resolveContext(request: Request): { formatId: string; releaseId:
   if (!meta) return { formatId, releaseId, response: failure([issue('/dataReleaseId', 'UNKNOWN_RELEASE', 'Data release is not available.')], 404) };
   if (format.dataReleaseId !== releaseId) return { formatId, releaseId, response: failure([issue('/dataReleaseId', 'RELEASE_FORMAT_MISMATCH', 'Release does not contain the requested format.')], 422) };
   return { formatId, releaseId, meta };
+}
+
+export async function resolveRuntimeContext(request: Request): Promise<{
+  formatId: string;
+  releaseId: string;
+  meta?: DataMeta;
+  format?: RuntimeContext['format'];
+  runtime: 'bundled-preview' | 'postgresql';
+  postgresContext?: RuntimeContext;
+  response?: Response;
+}> {
+  const sourceResponse = ensureDataSource();
+  if (sourceResponse) return { formatId: '', releaseId: '', runtime: 'bundled-preview', response: sourceResponse };
+  const state = getDataSourceState();
+  const url = new URL(request.url);
+  const formatId = url.searchParams.get('formatId') ?? configuredFormatId() ?? FORMAT_ID;
+  const requestedReleaseId = url.searchParams.get('dataReleaseId') ?? url.searchParams.get('releaseId');
+  const releaseId = requestedReleaseId ?? (state.kind === 'postgresql' ? configuredReleaseId() : RELEASE_ID);
+  if (!releaseId) return {
+    formatId,
+    releaseId: '',
+    runtime: 'postgresql',
+    response: failure([issue('/dataReleaseId', 'DATA_RELEASE_REQUIRED', 'dataReleaseId is required when the PostgreSQL repository is active.')], 400),
+  };
+
+  if (state.kind !== 'postgresql') {
+    const context = resolveContext(new Request(`https://vgc.local/api/v1/context?formatId=${encodeURIComponent(formatId)}&dataReleaseId=${encodeURIComponent(releaseId)}`));
+    return { ...context, runtime: 'bundled-preview' };
+  }
+
+  try {
+    const postgresContext = await getPostgresContext(formatId, releaseId);
+    if (!postgresContext) return {
+      formatId,
+      releaseId,
+      runtime: 'postgresql',
+      response: failure([issue('/dataReleaseId', 'UNKNOWN_RELEASE_OR_FORMAT', 'The requested format and exact data release are not available together.')], 404),
+    };
+    return { formatId, releaseId, meta: postgresContext.meta, format: postgresContext.format, runtime: 'postgresql', postgresContext };
+  } catch (error) {
+    return {
+      formatId,
+      releaseId,
+      runtime: 'postgresql',
+      response: postgresFailure(error),
+    };
+  }
+}
+
+function postgresFailure(error: unknown): Response {
+  const code = error instanceof PostgresRepositoryError ? error.code : 'POSTGRESQL_UNAVAILABLE';
+  const message = error instanceof PostgresRepositoryError ? error.message : 'The PostgreSQL repository is unavailable.';
+  return failure([issue('/', code, message)], 503, dataSourceMeta());
 }
 
 export async function readJson(request: Request): Promise<{ value?: unknown; issues: Issue[] }> {

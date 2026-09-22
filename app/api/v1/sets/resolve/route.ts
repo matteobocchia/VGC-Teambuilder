@@ -1,6 +1,6 @@
 import { FORMAT_ID, RELEASE_ID } from '@/server/domain/repository';
-import { failure, readJson, resolveContext } from '@/server/http';
-import { validateSet } from '@/server/domain/validation';
+import { failure, readJson, resolveRuntimeContext } from '@/server/http';
+import { issue, validateSet } from '@/server/domain/validation';
 
 export async function POST(request: Request) {
   const parsed = await readJson(request);
@@ -8,8 +8,9 @@ export async function POST(request: Request) {
   const body = parsed.value as Record<string, unknown>;
   const formatId = typeof body.formatId === 'string' ? body.formatId : FORMAT_ID;
   const releaseId = typeof body.dataReleaseId === 'string' ? body.dataReleaseId : RELEASE_ID;
-  const context = resolveContext(new Request(`https://vgc.local/api/v1/sets/resolve?formatId=${encodeURIComponent(formatId)}&dataReleaseId=${encodeURIComponent(releaseId)}`));
+  const context = await resolveRuntimeContext(new Request(`https://vgc.local/api/v1/sets/resolve?formatId=${encodeURIComponent(formatId)}&dataReleaseId=${encodeURIComponent(releaseId)}`));
   if (context.response) return context.response;
+  if (context.runtime === 'postgresql') return failure([issue('/set', 'POSTGRESQL_VALIDATION_NOT_CONFIGURED', 'Set validation is not yet connected to the PostgreSQL release repository.', true)], 503, context.meta ?? {});
   const result = validateSet(body.set, formatId);
   if (result.issues.length) return failure(result.issues, 422);
   return failure([{
