@@ -735,7 +735,7 @@ function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, natureOptions,
 }
 
 function BuilderWorkspace() {
-  const [locale, setLocaleState] = useState<Locale>(() => storedLocale() ?? 'it');
+  const [locale, setLocaleState] = useState<Locale>('it');
   const setLocale = (nextLocale: Locale) => { setLocaleState(nextLocale); persistLocale(nextLocale); };
   const [teamName, setTeamName] = useState('');
   const [slots, setSlots] = useState<BuilderSlot[]>(() => Array.from({ length: 6 }, () => null));
@@ -1080,6 +1080,7 @@ function BuilderWorkspace() {
       </div>
       {!revisionId && <p className="builder-revision-hint">{locale === 'it' ? 'Salva una revisione server per ottenere un link read-only.' : 'Save a server revision to get a read-only link.'}</p>}
       {revisionId && revisionStatus && revisionStatus !== 'legal' && <p className="builder-revision-hint">{locale === 'it' ? 'La condivisione richiede una revisione completa e legale.' : 'Sharing requires a complete legal revision.'}</p>}
+      {revisionId && revisionStatus === 'legal' && <p className="builder-revision-hint">{locale === 'it' ? 'Creare un nuovo link invalida quello precedente.' : 'Creating a new link invalidates the previous one.'}</p>}
       {revisionDirty && revisionId && <p className="builder-revision-hint">{locale === 'it' ? 'Il link condivide l’ultima revisione salvata; le modifiche locali restano private finché non salvi.' : 'The link shares the last saved revision; local changes stay private until you save.'}</p>}
       {shareUrl && <div className="builder-revision-share"><label htmlFor="builder-share-url">{locale === 'it' ? 'Link read-only' : 'Read-only link'}<input id="builder-share-url" value={shareUrl} readOnly onFocus={(event) => event.target.select()} /></label><button type="button" onClick={() => void copyShareLink()}>{locale === 'it' ? 'Copia link' : 'Copy link'}</button></div>}
       {(revisionMessage || shareMessage) && <div className="builder-revision-feedback" role={revisionIssues.length || shareIssues.length ? 'alert' : 'status'} aria-live="polite"><p>{revisionMessage ?? shareMessage}</p>{revisionIssues.length > 0 && <ul>{revisionIssues.map((issue, index) => <li key={`revision-${index}-${issue}`}>{issue}</li>)}</ul>}{shareIssues.length > 0 && <ul>{shareIssues.map((issue, index) => <li key={`share-${index}-${issue}`}>{issue}</li>)}</ul>}</div>}
