@@ -44,6 +44,24 @@ type TerrainKey = 'none' | 'electric' | 'grassy' | 'psychic' | 'misty';
 type FieldEffectKey = 'reflect' | 'lightScreen' | 'auroraVeil' | 'safeguard' | 'tailwind' | 'trickRoom' | 'gravity';
 type FieldState = { weather: WeatherKey; terrain: TerrainKey } & Record<FieldEffectKey, boolean>;
 
+function storedLocale(): Locale | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const value = window.localStorage.getItem('vgc-forge:locale');
+    return value === 'en' || value === 'it' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistLocale(locale: Locale) {
+  try {
+    window.localStorage.setItem('vgc-forge:locale', locale);
+  } catch {
+    // Local preference is optional; the in-memory state remains authoritative.
+  }
+}
+
 const statKeys: StatKey[] = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 
 type Pokemon = {
@@ -335,7 +353,8 @@ function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
       return {};
     }
   });
-  const [locale, setLocale] = useState<Locale>(savedWorkspace.locale === 'en' ? 'en' : 'it');
+  const [locale, setLocaleState] = useState<Locale>(() => storedLocale() ?? (savedWorkspace.locale === 'en' ? 'en' : 'it'));
+  const setLocale = (nextLocale: Locale) => { setLocaleState(nextLocale); persistLocale(nextLocale); };
   const [mode, setMode] = useState<Mode>(savedWorkspace.mode === 'singles' ? 'singles' : 'doubles');
   const [attackerIndex, setAttackerIndexState] = useState(typeof savedWorkspace.attackerIndex === 'number' && team[savedWorkspace.attackerIndex] ? savedWorkspace.attackerIndex : 0);
   const [defenderIndex, setDefenderIndexState] = useState(typeof savedWorkspace.defenderIndex === 'number' && team[savedWorkspace.defenderIndex] ? savedWorkspace.defenderIndex : 1);
@@ -466,7 +485,8 @@ function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, natureOptions,
 }
 
 function BuilderWorkspace() {
-  const [locale, setLocale] = useState<Locale>('it');
+  const [locale, setLocaleState] = useState<Locale>(() => storedLocale() ?? 'it');
+  const setLocale = (nextLocale: Locale) => { setLocaleState(nextLocale); persistLocale(nextLocale); };
   const [teamName, setTeamName] = useState('');
   const [slots, setSlots] = useState<BuilderSlot[]>(() => Array.from({ length: 6 }, () => null));
   const [selectedSlot, setSelectedSlot] = useState(0);

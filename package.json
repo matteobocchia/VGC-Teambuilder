@@ -11,8 +11,10 @@
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt",
+    "smoke:api": "node scripts/smoke-api.mjs",
     "db:import": "node scripts/import-release.mjs",
-    "db:check": "node scripts/import-release.mjs db/fixtures/minimal-release.json --dry-run"
+    "db:check": "node scripts/import-release.mjs db/fixtures/minimal-release.json --dry-run",
+    "test:release-gate": "node scripts/release-gate.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
