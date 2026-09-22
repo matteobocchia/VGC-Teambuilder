@@ -4,12 +4,39 @@ import { getPostgresContext, PostgresRepositoryError, type RuntimeContext } from
 import type { DataMeta, Issue } from './domain/types';
 import { issue } from './domain/validation';
 
+function unavailableMeta(): Record<string, unknown> {
+  const state = getDataSourceState();
+  return {
+    apiVersion: dataMeta.apiVersion,
+    schemaVersion: dataMeta.schemaVersion,
+    releaseId: null,
+    checksum: null,
+    dataStatus: 'unavailable',
+    source: state.kind,
+    gaps: ['DATA_SOURCE_UNAVAILABLE', ...(state.reason ? [state.reason] : [])],
+    coverage: {
+      catalog: 'unavailable',
+      legalities: 'unavailable',
+      learnsets: 'unavailable',
+      damageEngine: 'unavailable',
+      teamValidation: 'unavailable',
+    },
+    ...dataSourceMeta(),
+  };
+}
+
+function responseMeta(): Record<string, unknown> {
+  return getDataSourceState().kind === 'bundled-preview'
+    ? { ...makeMeta(), ...dataSourceMeta() }
+    : unavailableMeta();
+}
+
 export function success<T>(data: T, extraMeta: Partial<DataMeta> & Record<string, unknown> = {}) {
-  return Response.json({ data, meta: { ...makeMeta(), ...dataSourceMeta(), ...extraMeta } }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ data, meta: { ...responseMeta(), ...extraMeta } }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export function failure(issues: Issue[], status = 422, extraMeta: Record<string, unknown> = {}) {
-  return Response.json({ issues, meta: { ...dataMeta, ...dataSourceMeta(), ...extraMeta } }, { status, headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ issues, meta: { ...responseMeta(), ...extraMeta } }, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
 export function ensureDataSource(): Response | undefined {

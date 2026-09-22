@@ -30,14 +30,15 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ApiClientError, defaultFormatId, getCatalogContext, getCatalogPokemon, type ApiFormat, type ApiMeta, type ApiOption, type ApiPokemon } from './lib/api';
 
 type Locale = 'it' | 'en';
 type Mode = 'doubles' | 'singles';
 type StatKey = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
 type Move = { name: string; type: string; power: number | null; range: string; ko: string; score: number | null };
 type PokemonSet = { tera: string; item: string; ability: string; nature: string; statPoints: Record<StatKey, number>; moves: string[] };
-type BuilderSlot = { pokemonName: string; set: PokemonSet } | null;
+type BuilderSlot = { pokemonName: string; pokemonId?: string; set: PokemonSet } | null;
 type WeatherKey = 'clear' | 'sun' | 'rain' | 'sand' | 'snow';
 type TerrainKey = 'none' | 'electric' | 'grassy' | 'psychic' | 'misty';
 type FieldEffectKey = 'reflect' | 'lightScreen' | 'auroraVeil' | 'safeguard' | 'tailwind' | 'trickRoom' | 'gravity';
@@ -47,9 +48,12 @@ const statKeys: StatKey[] = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 
 type Pokemon = {
   name: string;
+  nameIt?: string | null;
   role: string;
+  roleIt?: string | null;
   types: string[];
   baseStats: Record<StatKey, number>;
+  api?: ApiPokemon;
 };
 
 const team: Pokemon[] = [
@@ -72,13 +76,14 @@ const defaultSets: Record<string, PokemonSet> = {
   Farigiraf: { tera: 'Fairy', item: 'Mental Herb', ability: 'Armor Tail', nature: 'Quiet (+SpA, -Spe)', statPoints: { hp: 28, atk: 0, def: 0, spa: 32, spd: 6, spe: 0 }, moves: ['Psychic', 'Hyper Voice', 'Trick Room', 'Helping Hand'] },
 };
 
-function restoreBuilderSlots(rawSlots: unknown): BuilderSlot[] {
+function restoreBuilderSlots(rawSlots: unknown, catalog: Pokemon[] = pokemonCatalog): BuilderSlot[] {
   const stored = Array.isArray(rawSlots) ? rawSlots : [];
   return Array.from({ length: 6 }, (_, index) => {
-    const storedSlot = stored[index] as Partial<BuilderSlot & { pokemonName: string; set: PokemonSet }> | null | undefined;
-    if (!storedSlot || typeof storedSlot.pokemonName !== 'string' || !defaultSets[storedSlot.pokemonName]) return null;
-    const defaults = defaultSets[storedSlot.pokemonName];
-    return { pokemonName: storedSlot.pokemonName, set: { ...cloneSet(defaults), ...storedSlot.set, statPoints: { ...defaults.statPoints, ...storedSlot.set?.statPoints }, moves: Array.isArray(storedSlot.set?.moves) && storedSlot.set.moves.length === 4 ? [...storedSlot.set.moves] : cloneSet(defaults).moves } };
+    const storedSlot = stored[index] as Partial<BuilderSlot & { pokemonName: string; pokemonId?: string; set: PokemonSet }> | null | undefined;
+    const pokemon = catalog.find((entry) => entry.api?.formId === storedSlot?.pokemonId || entry.name === storedSlot?.pokemonName);
+    if (!storedSlot || typeof storedSlot.pokemonName !== 'string' || !pokemon) return null;
+    const defaults = setForPokemon(pokemon);
+    return { pokemonName: pokemon.name, pokemonId: pokemon.api?.formId ?? storedSlot.pokemonId, set: { ...cloneSet(defaults), ...storedSlot.set, statPoints: { ...defaults.statPoints, ...storedSlot.set?.statPoints }, moves: Array.isArray(storedSlot.set?.moves) && storedSlot.set.moves.length === 4 ? [...storedSlot.set.moves] : cloneSet(defaults).moves } };
   });
 }
 
@@ -101,6 +106,39 @@ function deriveStats(pokemon: Pokemon, set: PokemonSet) {
 
 function cloneSet(set: PokemonSet): PokemonSet {
   return { ...set, statPoints: { ...set.statPoints }, moves: [...set.moves] };
+}
+
+function optionLabel(option: { labels: { it: string | null; en: string } } | undefined, locale: Locale = 'en') {
+  return option ? (locale === 'it' ? option.labels.it ?? option.labels.en : option.labels.en) : '';
+}
+
+function setForPokemon(pokemon: Pokemon): PokemonSet {
+  const saved = defaultSets[pokemon.name];
+  if (saved) return cloneSet(saved);
+  const source = pokemon.api;
+  if (!source) return cloneSet(defaultSets['Flutter Mane']);
+  const initial = source?.initialSet;
+  const moves = initial?.moveIds.map((id) => optionLabel(source.learnableMoves.find((move) => move.id === id))).filter(Boolean) ?? source?.learnableMoves.slice(0, 4).map((move) => optionLabel(move)) ?? [];
+  return {
+    tera: initial?.teraTypeId ? optionLabel(source.types.find((type) => type.id === initial.teraTypeId)) || 'Normal' : 'Normal',
+    item: initial?.itemId ? optionLabel(source.items.find((item) => item.id === initial.itemId)) || 'None' : 'None',
+    ability: initial?.abilityId ? optionLabel(source.abilities.find((ability) => ability.id === initial.abilityId)) || optionLabel(source.abilities[0]) : optionLabel(source?.abilities[0]) || '—',
+    nature: 'Hardy',
+    statPoints: initial?.statPoints ? { ...initial.statPoints } : { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+    moves: moves.length ? moves.slice(0, 4) : ['Protect'],
+  };
+}
+
+function viewPokemonFromApi(entry: ApiPokemon): Pokemon {
+  return {
+    name: entry.labels.en,
+    nameIt: entry.labels.it,
+    role: entry.role.labels.en,
+    roleIt: entry.role.labels.it,
+    types: entry.types.map((type) => type.labels.en),
+    baseStats: entry.baseStats,
+    api: entry,
+  };
 }
 
 function clampStatPoints(raw: Record<StatKey, number>, changedKey: StatKey): Record<StatKey, number> {
@@ -131,12 +169,26 @@ function movesForSet(set: PokemonSet) {
 
 const copy = {
   it: {
-    team: 'Team', attacker: 'Attaccante', defender: 'Difensore', attackerSlot: 'Slot attaccante', defenderSlot: 'Slot difensore', setup: 'Set attivo', route: 'Percorso matchup', outcomes: 'Esiti mosse', field: 'Campo e condizioni', format: 'Champions · Regulation M-B', language: 'Italiano', languageLabel: 'Lingua', formatLabel: 'Formato', primaryNav: 'Navigazione principale', inspectorOptions: 'Opzioni inspector (prossimamente)', save: 'Salva team', saved: 'Salvato', teamFull: 'Team completo', autoSave: 'Salvataggio locale manuale', demoRoster: 'Roster demo · scenario temporaneo', level: 'Livello', tera: 'Tera tipo', item: 'Strumento', ability: 'Abilità', nature: 'Natura', statPoints: 'Stat Points', moves: 'Mosse', add: 'Aggiungi Pokémon', fieldTerrain: 'Campo Elettrico', fieldReflect: 'Riflesso', weather: 'Meteo', terrain: 'Campo', clear: 'Nessun meteo', rain: 'Pioggia', sand: 'Tempesta di sabbia', snow: 'Neve', terrainNone: 'Nessun campo', grassyTerrain: 'Campo Erboso', psychicTerrain: 'Campo Psichico', mistyTerrain: 'Campo Nebbioso', screens: 'Schermate e protezioni', speedSpace: 'Velocità e spazio', lightScreen: 'Schermoluce', auroraVeil: 'Velaurora', safeguard: 'Salvaguardia', tailwind: 'Ventoincoda', trickRoom: 'Distortozona', gravity: 'Gravità', activeEffects: 'effetti attivi', fieldSummary: 'Stato simulazione', primary: 'Risultato principale', versus: 'contro', damage: 'Danno', power: 'Potenza', ko: 'KO %', koChance: 'Probabilità KO', selectMove: 'Seleziona mossa', battleMode: 'Modalità lotta', preset: 'Preset UI', allRolls: 'Tutti i roll', critical: 'Critico', spread: 'Spread', details: 'Dettagli', calculator: 'Calcolatore danni', builder: 'Team builder', formatWarning: 'Validità formato: informativa', statHint: '0–32 per statistica · 66 totali', turns: 'turni', sun: 'Luce solare intensa', sunUnavailable: 'Disponibile prossimamente', off: 'disattivo', howItWorks: 'Come funziona', accuracyNote: 'I valori mostrati sono un preset di interfaccia in attesa dell’engine server-side.', newTeam: 'Nuovo team', teamName: 'Nome team', emptySlot: 'Slot vuoto', addPokemon: 'Aggiungi Pokémon', searchPokemon: 'Cerca Pokémon', catalog: 'Catalogo Pokémon', selectSlot: 'Seleziona uno slot', emptyBuilderHelp: 'Scegli un Pokémon dal catalogo per iniziare a costruire il team.', removePokemon: 'Rimuovi Pokémon', choosePokemon: 'Scegli Pokémon', moveHint: 'Scegli una mossa per ogni slot', catalogHint: 'Dati disponibili per il prototipo Champions', noResults: 'Nessun Pokémon trovato', savedLocally: 'Salvato nel browser', emptyTeam: 'Nessun Pokémon nel team',
+    team: 'Team', attacker: 'Attaccante', defender: 'Difensore', attackerSlot: 'Slot attaccante', defenderSlot: 'Slot difensore', setup: 'Set attivo', route: 'Percorso matchup', outcomes: 'Esiti mosse', field: 'Campo e condizioni', format: 'Champions · Regulation M-B', language: 'Italiano', languageLabel: 'Lingua', formatLabel: 'Formato', primaryNav: 'Navigazione principale', inspectorOptions: 'Opzioni inspector (prossimamente)', save: 'Salva bozza', saved: 'Salvato', teamFull: 'Team completo', autoSave: 'Salvataggio locale manuale', demoRoster: 'Roster demo · scenario temporaneo', level: 'Livello', tera: 'Tera tipo', item: 'Strumento', ability: 'Abilità', nature: 'Natura', statPoints: 'Stat Points', moves: 'Mosse', add: 'Aggiungi Pokémon', fieldTerrain: 'Campo Elettrico', fieldReflect: 'Riflesso', weather: 'Meteo', terrain: 'Campo', clear: 'Nessun meteo', rain: 'Pioggia', sand: 'Tempesta di sabbia', snow: 'Neve', terrainNone: 'Nessun campo', grassyTerrain: 'Campo Erboso', psychicTerrain: 'Campo Psichico', mistyTerrain: 'Campo Nebbioso', screens: 'Schermate e protezioni', speedSpace: 'Velocità e spazio', lightScreen: 'Schermoluce', auroraVeil: 'Velaurora', safeguard: 'Salvaguardia', tailwind: 'Ventoincoda', trickRoom: 'Distortozona', gravity: 'Gravità', activeEffects: 'effetti attivi', fieldSummary: 'Stato simulazione', primary: 'Risultato principale', versus: 'contro', damage: 'Danno', power: 'Potenza', ko: 'KO %', koChance: 'Probabilità KO', selectMove: 'Seleziona mossa', battleMode: 'Modalità lotta', preset: 'Preset UI', allRolls: 'Tutti i roll', critical: 'Critico', spread: 'Spread', details: 'Dettagli', calculator: 'Calcolatore danni', builder: 'Team builder', formatWarning: 'Anteprima dati · non verificata', statHint: '0–32 per statistica · 66 totali', turns: 'turni', sun: 'Luce solare intensa', sunUnavailable: 'Disponibile prossimamente', off: 'disattivo', howItWorks: 'Come funziona', accuracyNote: 'I valori mostrati sono un preset di interfaccia in attesa dell’engine server-side.', newTeam: 'Nuovo team', teamName: 'Nome team', emptySlot: 'Slot vuoto', addPokemon: 'Aggiungi Pokémon', searchPokemon: 'Cerca Pokémon', catalog: 'Catalogo Pokémon', selectSlot: 'Seleziona uno slot', emptyBuilderHelp: 'Scegli un Pokémon dal catalogo per iniziare a costruire il team.', removePokemon: 'Rimuovi Pokémon', choosePokemon: 'Scegli Pokémon', moveHint: 'Scegli una mossa per ogni slot', catalogHint: 'Catalogo ricevuto dal server · legalità non verificata', noResults: 'Nessun Pokémon trovato', savedLocally: 'Salvato nel browser', emptyTeam: 'Nessun Pokémon nel team', loadingCatalog: 'Caricamento catalogo Pokémon…', previewCatalog: 'Release di anteprima non verificata. Puoi creare una bozza, ma legalità e danno non sono certificati.', certifiedCatalog: 'Release certificata · legalità disponibile secondo il formato.', provisionalCatalog: 'Release provvisoria · alcune verifiche non sono ancora complete.', configurationCatalog: 'Il servizio dati non è configurato. La bozza resta disponibile localmente.', releaseCatalog: 'La release richiesta non è disponibile per questo formato.', timeoutCatalog: 'Il catalogo sta impiegando troppo tempo. Riprova.', unavailableCatalog: 'Il catalogo ufficiale non è raggiungibile. Salva la bozza prima di riprovare.', retry: 'Riprova',
   },
   en: {
-    team: 'Team', attacker: 'Attacker', defender: 'Defender', attackerSlot: 'Attacker slot', defenderSlot: 'Defender slot', setup: 'Active set', route: 'Matchup route', outcomes: 'Move outcomes', field: 'Field & conditions', format: 'Champions · Regulation M-B', language: 'English', languageLabel: 'Language', formatLabel: 'Format', primaryNav: 'Primary navigation', inspectorOptions: 'Inspector options (coming soon)', save: 'Save team', saved: 'Saved', teamFull: 'Team full', autoSave: 'Manual local save', demoRoster: 'Demo roster · temporary scenario', level: 'Level', tera: 'Tera type', item: 'Held item', ability: 'Ability', nature: 'Nature', statPoints: 'Stat Points', moves: 'Moves', add: 'Add Pokémon', fieldTerrain: 'Electric Terrain', fieldReflect: 'Reflect', weather: 'Weather', terrain: 'Terrain', clear: 'No weather', rain: 'Rain', sand: 'Sandstorm', snow: 'Snow', terrainNone: 'No terrain', grassyTerrain: 'Grassy Terrain', psychicTerrain: 'Psychic Terrain', mistyTerrain: 'Misty Terrain', screens: 'Screens & protection', speedSpace: 'Speed & space', lightScreen: 'Light Screen', auroraVeil: 'Aurora Veil', safeguard: 'Safeguard', tailwind: 'Tailwind', trickRoom: 'Trick Room', gravity: 'Gravity', activeEffects: 'active effects', fieldSummary: 'Simulation state', primary: 'Primary result', versus: 'vs', damage: 'Damage', power: 'Power', ko: 'KO %', koChance: 'KO chance', selectMove: 'Select move', battleMode: 'Battle mode', preset: 'UI preset', allRolls: 'All rolls', critical: 'Critical', spread: 'Spread', details: 'Details', calculator: 'Damage calculator', builder: 'Team builder', formatWarning: 'Format legality: informational', statHint: '0–32 per stat · 66 total', turns: 'turns', sun: 'Harsh sunlight', sunUnavailable: 'Coming soon', off: 'off', howItWorks: 'How it works', accuracyNote: 'Displayed values are interface presets while the server-side engine is connected.', newTeam: 'New team', teamName: 'Team name', emptySlot: 'Empty slot', addPokemon: 'Add Pokémon', searchPokemon: 'Search Pokémon', catalog: 'Pokémon catalog', selectSlot: 'Select a slot', emptyBuilderHelp: 'Choose a Pokémon from the catalog to start building your team.', removePokemon: 'Remove Pokémon', choosePokemon: 'Choose Pokémon', moveHint: 'Choose one move for each slot', catalogHint: 'Data available for the Champions prototype', noResults: 'No Pokémon found', savedLocally: 'Saved in browser', emptyTeam: 'No Pokémon in team',
+    team: 'Team', attacker: 'Attacker', defender: 'Defender', attackerSlot: 'Attacker slot', defenderSlot: 'Defender slot', setup: 'Active set', route: 'Matchup route', outcomes: 'Move outcomes', field: 'Field & conditions', format: 'Champions · Regulation M-B', language: 'English', languageLabel: 'Language', formatLabel: 'Format', primaryNav: 'Primary navigation', inspectorOptions: 'Inspector options (coming soon)', save: 'Save draft', saved: 'Saved', teamFull: 'Team full', autoSave: 'Manual local save', demoRoster: 'Demo roster · temporary scenario', level: 'Level', tera: 'Tera type', item: 'Held item', ability: 'Ability', nature: 'Nature', statPoints: 'Stat Points', moves: 'Moves', add: 'Add Pokémon', fieldTerrain: 'Electric Terrain', fieldReflect: 'Reflect', weather: 'Weather', terrain: 'Terrain', clear: 'No weather', rain: 'Rain', sand: 'Sandstorm', snow: 'Snow', terrainNone: 'No terrain', grassyTerrain: 'Grassy Terrain', psychicTerrain: 'Psychic Terrain', mistyTerrain: 'Misty Terrain', screens: 'Screens & protection', speedSpace: 'Speed & space', lightScreen: 'Light Screen', auroraVeil: 'Aurora Veil', safeguard: 'Safeguard', tailwind: 'Tailwind', trickRoom: 'Trick Room', gravity: 'Gravity', activeEffects: 'active effects', fieldSummary: 'Simulation state', primary: 'Primary result', versus: 'vs', damage: 'Damage', power: 'Power', ko: 'KO %', koChance: 'KO chance', selectMove: 'Select move', battleMode: 'Battle mode', preset: 'UI preset', allRolls: 'All rolls', critical: 'Critical', spread: 'Spread', details: 'Details', calculator: 'Damage calculator', builder: 'Team builder', formatWarning: 'Data preview · unverified', statHint: '0–32 per stat · 66 total', turns: 'turns', sun: 'Harsh sunlight', sunUnavailable: 'Coming soon', off: 'off', howItWorks: 'How it works', accuracyNote: 'Displayed values are interface presets while the server-side engine is connected.', newTeam: 'New team', teamName: 'Team name', emptySlot: 'Empty slot', addPokemon: 'Add Pokémon', searchPokemon: 'Search Pokémon', catalog: 'Pokémon catalog', selectSlot: 'Select a slot', emptyBuilderHelp: 'Choose a Pokémon from the catalog to start building your team.', removePokemon: 'Remove Pokémon', choosePokemon: 'Choose Pokémon', moveHint: 'Choose one move for each slot', catalogHint: 'Catalog loaded from the server; legality not verified', noResults: 'No Pokémon found', savedLocally: 'Saved in browser', emptyTeam: 'No Pokémon in team', loadingCatalog: 'Loading Pokémon catalog…', previewCatalog: 'Preview release is unverified. You can create a draft, but legality and damage are not certified.', certifiedCatalog: 'Certified release · format legality is available.', provisionalCatalog: 'Provisional release · some checks are still incomplete.', configurationCatalog: 'The data service is not configured. Your draft remains available locally.', releaseCatalog: 'The requested release is not available for this format.', timeoutCatalog: 'The catalog is taking too long to load. Retry.', unavailableCatalog: 'The official catalog is unavailable. Save the draft before retrying.', retry: 'Retry',
   },
 } as const;
+
+function catalogErrorMessage(error: ApiClientError | null, copyForLocale: (typeof copy)[Locale]) {
+  if (error?.code === 'DATABASE_URL_REQUIRED' || error?.code === 'POSTGRESQL_RUNTIME_UNSUPPORTED' || error?.code === 'POSTGRESQL_ADAPTER_NOT_CONFIGURED') return copyForLocale.configurationCatalog;
+  if (error?.code === 'UNKNOWN_RELEASE_OR_FORMAT' || error?.code === 'UNKNOWN_RELEASE' || error?.code === 'RELEASE_FORMAT_MISMATCH') return copyForLocale.releaseCatalog;
+  if (error?.code === 'REQUEST_TIMEOUT') return copyForLocale.timeoutCatalog;
+  return copyForLocale.unavailableCatalog;
+}
+
+function catalogStatusMessage(meta: ApiMeta | null, copyForLocale: (typeof copy)[Locale]) {
+  if (!meta) return copyForLocale.formatWarning;
+  if (meta.dataStatus === 'certified') return copyForLocale.certifiedCatalog;
+  if (meta.dataStatus === 'provisional') return copyForLocale.provisionalCatalog;
+  return copyForLocale.previewCatalog;
+}
 
 function fieldSummary(copyForLocale: (typeof copy)[Locale], state: FieldState) {
   const weatherLabels: Record<WeatherKey, string> = { clear: copyForLocale.clear, sun: copyForLocale.sun, rain: copyForLocale.rain, sand: copyForLocale.sand, snow: copyForLocale.snow };
@@ -249,11 +301,11 @@ function FieldControls({ copyForLocale, fieldState, setFieldState, mode, summary
   return <section className="field-section"><div className="field-heading"><div><h2>{copyForLocale.field}</h2><p>{copyForLocale.fieldSummary} · {summary}</p></div><span>{mode === 'doubles' ? '2v2' : '1v1'}</span></div><div className="field-panel"><fieldset className="field-group"><legend>{copyForLocale.weather}</legend><div className="field-option-row field-option-row-weather">{weatherOptions.map((option) => <button type="button" key={option.key} aria-pressed={fieldState.weather === option.key} className={`field-option field-option-weather field-option-${option.key} ${fieldState.weather === option.key ? 'field-option-active' : ''}`} onClick={() => setFieldState({ weather: option.key })}><WeatherGlyph weather={option.key} /><span>{option.label}</span></button>)}</div></fieldset><fieldset className="field-group"><legend>{copyForLocale.terrain}</legend><div className="field-option-row field-option-row-terrain">{terrainOptions.map((option) => <button type="button" key={option.key} aria-pressed={fieldState.terrain === option.key} className={`field-option field-option-terrain field-option-${option.key} ${fieldState.terrain === option.key ? 'field-option-active' : ''}`} onClick={() => setFieldState({ terrain: option.key })}><TerrainGlyph terrain={option.key} /><span>{option.label}</span></button>)}</div></fieldset><div className="field-effect-columns"><fieldset className="field-group"><legend>{copyForLocale.screens}</legend><div className="field-effect-grid">{protectionEffects.map((effect) => <button type="button" key={effect.key} aria-pressed={fieldState[effect.key]} className={`field-option field-option-effect ${fieldState[effect.key] ? 'field-option-active' : ''}`} onClick={() => toggleEffect(effect.key)}><EffectGlyph effect={effect.key} /><span>{effect.label}</span></button>)}</div></fieldset><fieldset className="field-group"><legend>{copyForLocale.speedSpace}</legend><div className="field-effect-grid">{speedEffects.map((effect) => <button type="button" key={effect.key} aria-pressed={fieldState[effect.key]} className={`field-option field-option-effect ${fieldState[effect.key] ? 'field-option-active' : ''}`} onClick={() => toggleEffect(effect.key)}><EffectGlyph effect={effect.key} /><span>{effect.label}</span></button>)}</div></fieldset></div><div className="field-active-summary" aria-live="polite"><Check size={15} aria-hidden="true" /><span><b>{copyForLocale.fieldSummary}:</b> {summary}</span></div></div></section>;
 }
 
-function MatchupRoute({ copyForLocale, attacker, defender, attackerSet, defenderSet, attackerIndex, defenderIndex, setAttackerIndex, setDefenderIndex, mode, setMode, activeMoves, selectedMoveIndex, setSelectedMoveIndex, fieldState, setFieldState, fieldSummary }: { copyForLocale: (typeof copy)[Locale]; attacker: Pokemon; defender: Pokemon; attackerSet: PokemonSet; defenderSet: PokemonSet; attackerIndex: number; defenderIndex: number; setAttackerIndex: (index: number) => void; setDefenderIndex: (index: number) => void; mode: Mode; setMode: (mode: Mode) => void; activeMoves: Move[]; selectedMoveIndex: number; setSelectedMoveIndex: (index: number) => void; fieldState: FieldState; setFieldState: (patch: Partial<FieldState>) => void; fieldSummary: string }) {
+function MatchupRoute({ copyForLocale, roster, attacker, defender, attackerSet, defenderSet, attackerIndex, defenderIndex, setAttackerIndex, setDefenderIndex, mode, setMode, activeMoves, selectedMoveIndex, setSelectedMoveIndex, fieldState, setFieldState, fieldSummary }: { copyForLocale: (typeof copy)[Locale]; roster: Pokemon[]; attacker: Pokemon; defender: Pokemon; attackerSet: PokemonSet; defenderSet: PokemonSet; attackerIndex: number; defenderIndex: number; setAttackerIndex: (index: number) => void; setDefenderIndex: (index: number) => void; mode: Mode; setMode: (mode: Mode) => void; activeMoves: Move[]; selectedMoveIndex: number; setSelectedMoveIndex: (index: number) => void; fieldState: FieldState; setFieldState: (patch: Partial<FieldState>) => void; fieldSummary: string }) {
   const locale: Locale = copyForLocale.language === 'Italiano' ? 'it' : 'en';
   const selectedMove = activeMoves[selectedMoveIndex] ?? activeMoves[0];
   const moveType = selectedMove.type;
-  const selector = (label: string, value: number, onChange: (index: number) => void, blockedIndex: number) => <label className="control-field"><span>{label}</span><span className="select-wrap"><select value={value} onChange={(event) => onChange(Number(event.target.value))} aria-label={label}>{team.map((pokemon, index) => <option key={pokemon.name} value={index} disabled={index === blockedIndex}>{index + 1} · {pokemon.name}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>;
+  const selector = (label: string, value: number, onChange: (index: number) => void, blockedIndex: number) => <label className="control-field"><span>{label}</span><span className="select-wrap"><select value={value} onChange={(event) => onChange(Number(event.target.value))} aria-label={label}>{roster.map((pokemon, index) => <option key={pokemon.name} value={index} disabled={index === blockedIndex}>{index + 1} · {pokemon.name}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>;
   return <section className="route-column"><div className="route-title-row"><div><h2>{copyForLocale.route}</h2><p>{attacker.name} <ArrowRight size={14} /> {defender.name}</p></div><fieldset className="mode-toggle" aria-label={copyForLocale.battleMode}><button type="button" aria-pressed={mode === 'doubles'} className={mode === 'doubles' ? 'mode-active' : ''} onClick={() => setMode('doubles')}>2v2</button><button type="button" aria-pressed={mode === 'singles'} className={mode === 'singles' ? 'mode-active' : ''} onClick={() => setMode('singles')}>1v1</button></fieldset></div><div className="matchup-selectors">{selector(copyForLocale.attackerSlot, attackerIndex, setAttackerIndex, defenderIndex)}{selector(copyForLocale.defenderSlot, defenderIndex, setDefenderIndex, attackerIndex)}</div><div className="map-canvas"><div className="map-grid-markers" aria-hidden="true"><span /> <span /> <span /></div><Region side="attacker" pokemon={attacker} set={attackerSet} copyForLocale={copyForLocale} /><Region side="defender" pokemon={defender} set={defenderSet} copyForLocale={copyForLocale} /><div className="route-line" aria-hidden="true"><span /> <span /> <span /></div><div className="result-stack"><button type="button" className={`move-selector type-${moveType.toLowerCase()}`} aria-label={`${copyForLocale.selectMove}: ${selectedMove.name}`} onClick={() => setSelectedMoveIndex((selectedMoveIndex + 1) % activeMoves.length)}><span className={`move-icon ${typeClass(moveType)}`}><Sparkles size={15} /></span><strong>{selectedMove.name}</strong><TypeTag type={moveType} locale={locale} /><ChevronDown size={15} /></button><div className="ko-result"><span>{copyForLocale.koChance} · {copyForLocale.preset}</span><strong>{selectedMove.ko}</strong><small>{copyForLocale.versus} {defender.name}</small></div><div className="result-details"><span><b>{selectedMove.range}</b><small>{copyForLocale.damage}</small></span><span><b>{selectedMove.ko ?? '—'}</b><small>{copyForLocale.allRolls}</small></span></div></div></div><FieldControls copyForLocale={copyForLocale} fieldState={fieldState} setFieldState={setFieldState} mode={mode} summary={fieldSummary} /></section>;
 }
 
@@ -266,9 +318,9 @@ function OutcomesMatrix({ copyForLocale, defender, detailsOpen, setDetailsOpen, 
   return <section className="outcomes-panel"><div className="outcomes-heading"><div><h2>{copyForLocale.outcomes}</h2><p>{copyForLocale.primary} · {selectedMove.name} {copyForLocale.versus} {defender.name} · {copyForLocale.preset}</p></div><div className="outcomes-actions"><button type="button" aria-pressed={detailsOpen} aria-expanded={detailsOpen} aria-controls="outcomes-details" className="outline-button" onClick={() => setDetailsOpen(!detailsOpen)}><Info size={14} /> {copyForLocale.details}</button><fieldset className="segmented" aria-label={copyForLocale.damage}><button type="button" aria-pressed={metric === 'percent'} className={metric === 'percent' ? 'segmented-active' : ''} onClick={() => setMetric('percent')}>%</button><button type="button" aria-pressed={metric === 'damage'} className={metric === 'damage' ? 'segmented-active' : ''} onClick={() => setMetric('damage')}>{copyForLocale.damage}</button></fieldset></div></div><div className="table-wrap"><table><thead><tr><th>{copyForLocale.moves}</th><th>{copyForLocale.power}</th><th>{copyForLocale.damage}</th><th>{copyForLocale.allRolls}</th>{targetKOs.map(([target]) => <th key={target}>{metric === 'percent' ? copyForLocale.ko : copyForLocale.damage}<br /><span>{target}</span></th>)}</tr></thead><tbody>{activeMoves.map((move, index) => <tr key={move.name} className={index === selectedMoveIndex ? 'table-row-primary' : ''}><td><span className={`table-move-icon ${typeClass(move.type)}`}>{move.power === null ? <Shield size={14} /> : <Sparkles size={14} />}</span><strong>{move.name}</strong><TypeTag type={move.type} locale={locale} /></td><td>{move.power ?? '—'}</td><td>{move.range}</td><td>{move.ko}</td>{targetKOs.map(([, values], targetIndex) => <td key={`${move.name}-${targetIndex}`}><span className={index === selectedMoveIndex ? 'ko-pill' : ''}>{metric === 'percent' ? values[index] : targetDamage[targetIndex][1][index]}</span></td>)}</tr>)}</tbody></table></div>{detailsOpen && <div className="details-callout" id="outcomes-details"><Info size={14} /><span>{copyForLocale.critical}: 3.1% · {copyForLocale.spread}: ×1.00 · {copyForLocale.field}: {fieldSummary}</span></div>}<div className="accuracy-note"><CircleAlert size={14} /><span>{copyForLocale.formatWarning}. {copyForLocale.accuracyNote}</span></div></section>;
 }
 
-function TeamRail({ selectedIndex, setSelectedIndex, copyForLocale }: { selectedIndex: number; setSelectedIndex: (index: number) => void; copyForLocale: (typeof copy)[Locale] }) {
+function TeamRail({ roster, selectedIndex, setSelectedIndex, copyForLocale }: { roster: Pokemon[]; selectedIndex: number; setSelectedIndex: (index: number) => void; copyForLocale: (typeof copy)[Locale] }) {
   const locale: Locale = copyForLocale.language === 'Italiano' ? 'it' : 'en';
-  return <aside className="team-rail"><div className="team-rail-heading"><div><h2>{copyForLocale.team}</h2><p>Regulation M-B</p></div><span className="team-count">6 / 6</span></div><div className="team-slots">{team.map((pokemon, index) => <button type="button" aria-pressed={selectedIndex === index} className={`team-slot ${selectedIndex === index ? 'team-slot-active' : ''}`} onClick={() => setSelectedIndex(index)} key={pokemon.name}><span className="slot-number">{index + 1}</span><span className="slot-copy"><strong>{pokemon.name}</strong><small>{roleLabel(pokemon.role, locale)}</small></span><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span></button>)}</div><button type="button" className="add-button" disabled title={copyForLocale.teamFull}><Plus size={16} /> {copyForLocale.add}</button><div className="team-rail-foot"><span className="status-dot" /> {copyForLocale.autoSave} · v0.1</div></aside>;
+  return <aside className="team-rail"><div className="team-rail-heading"><div><h2>{copyForLocale.team}</h2><p>Regulation M-B</p></div><span className="team-count">{roster.length} / 6</span></div><div className="team-slots">{roster.map((pokemon, index) => <button type="button" aria-pressed={selectedIndex === index} className={`team-slot ${selectedIndex === index ? 'team-slot-active' : ''}`} onClick={() => setSelectedIndex(index)} key={pokemon.name}><span className="slot-number">{index + 1}</span><span className="slot-copy"><strong>{locale === 'it' ? pokemon.nameIt ?? pokemon.name : pokemon.name}</strong><small>{locale === 'it' ? pokemon.roleIt ?? roleLabel(pokemon.role, locale) : pokemon.role}</small></span><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span></button>)}</div><button type="button" className="add-button" disabled title={copyForLocale.teamFull}><Plus size={16} /> {copyForLocale.add}</button><div className="team-rail-foot"><span className="status-dot" /> {copyForLocale.autoSave} · v0.1</div></aside>;
 }
 
 function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
@@ -291,28 +343,55 @@ function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [catalogEntries, setCatalogEntries] = useState<Pokemon[] | null>(null);
+  const [catalogMeta, setCatalogMeta] = useState<ApiMeta | null>(null);
+  const [catalogFormat, setCatalogFormat] = useState<ApiFormat | null>(null);
+  const [catalogError, setCatalogError] = useState<ApiClientError | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const copyForLocale = copy[locale];
   const pathname = usePathname();
-  const attacker = useMemo(() => team[attackerIndex], [attackerIndex]);
-  const defender = useMemo(() => team[defenderIndex], [defenderIndex]);
+  const loadCatalog = useCallback(async (signal?: AbortSignal) => {
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      const context = await getCatalogContext({ formatId: defaultFormatId, signal });
+      setCatalogFormat(context.data.format);
+      const response = await getCatalogPokemon({ formatId: context.data.format.id, dataReleaseId: context.meta.releaseId ?? undefined, locale, signal });
+      setCatalogEntries(response.data.pokemon.map(viewPokemonFromApi));
+      setCatalogMeta(response.meta);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setCatalogError(error instanceof ApiClientError ? error : new ApiClientError('The data service is unavailable.', 503, 'DATA_SERVICE_UNAVAILABLE'));
+    } finally {
+      if (!signal?.aborted) setCatalogLoading(false);
+    }
+  }, [locale]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => void loadCatalog(controller.signal), 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [loadCatalog]);
+  const activeTeam = catalogEntries ?? team;
+  const attacker = useMemo(() => activeTeam[attackerIndex] ?? activeTeam[0] ?? team[0], [activeTeam, attackerIndex]);
+  const defender = useMemo(() => activeTeam[defenderIndex] ?? activeTeam[1] ?? activeTeam[0] ?? team[1], [activeTeam, defenderIndex]);
   const selectedTarget = defender;
-  const activeSet = sets[attacker.name] ?? defaultSets[attacker.name];
+  const activeSet = sets[attacker.name] ?? setForPokemon(attacker);
   const activeMoves = movesForSet(activeSet);
   const selectedMove = activeMoves[selectedMoveIndex] ?? activeMoves[0];
   useEffect(() => { document.documentElement.lang = locale; }, [locale]);
   const activeFieldSummary = fieldSummary(copyForLocale, fieldState);
   const setAttackerIndex = (index: number) => {
-    if (!team[index]) return;
+    if (!activeTeam[index]) return;
     setAttackerIndexState(index);
     setSelectedMoveIndex(0);
     if (index === defenderIndex) setDefenderIndexState(index === 0 ? 1 : 0);
   };
   const setDefenderIndex = (index: number) => {
-    if (!team[index] || index === attackerIndex) return;
+    if (!activeTeam[index] || index === attackerIndex) return;
     setDefenderIndexState(index);
   };
   const setActiveSet = (patch: Partial<PokemonSet>) => setSets((current) => {
-    const currentSet = current[attacker.name] ?? defaultSets[attacker.name];
+    const currentSet = current[attacker.name] ?? setForPokemon(attacker);
     if (!patch.statPoints) return { ...current, [attacker.name]: { ...currentSet, ...patch } };
     const raw = patch.statPoints;
     const changedKey = statKeys.find((key) => raw[key] !== currentSet.statPoints[key]) ?? 'hp';
@@ -326,13 +405,16 @@ function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
     }
     return { ...current, [attacker.name]: { ...currentSet, ...patch, statPoints: nextPoints } };
   });
-  const defenderSet = sets[defender.name] ?? defaultSets[defender.name];
+  const defenderSet = sets[defender.name] ?? setForPokemon(defender);
   const setFieldState = (patch: Partial<FieldState>) => setFieldStateState((current) => ({ ...current, ...patch }));
   const saveWorkspace = () => {
     window.localStorage.setItem('vgc-forge:workspace-v1', JSON.stringify({ locale, mode, attackerIndex, defenderIndex, fieldState, sets }));
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1800);
   };
+  if (catalogLoading || catalogError) {
+    return <main className="forge-shell"><TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath={pathname === '/calculator' ? '/calculator' : '/'} saved={saved} onSave={saveWorkspace} showSave={false} /><div className="format-banner" role={catalogError ? 'alert' : undefined} aria-live="polite"><CircleAlert size={14} /><span>{catalogLoading ? copyForLocale.loadingCatalog : catalogErrorMessage(catalogError, copyForLocale)}</span>{catalogError && <button type="button" onClick={() => void loadCatalog()}>{copyForLocale.retry}</button>}</div><section className="calculator-data-state"><h1>{copyForLocale.calculator}</h1><p>{catalogLoading ? copyForLocale.loadingCatalog : catalogErrorMessage(catalogError, copyForLocale)}</p></section></main>;
+  }
   return <main className="forge-shell">
     {/* THESIS: an evidence-first tactical field map for building legal Champions teams and reading damage outcomes.
          OWN-WORLD: folded guide stock, cartographic panels, coastline dividers, crisp black ink, lime/blue/coral/yellow blocks.
@@ -340,15 +422,19 @@ function CalculatorWorkspace({ standalone = false }: { standalone?: boolean }) {
          FIRST VIEWPORT: setup inspector, primary KO result, field state, outcomes matrix, and six-slot team rail.
          FORM: generous cream canvas with angular map regions, dense data rows, and semantic controls.
          FINISH: one restrained state transition, responsive stacking, keyboard-visible controls, no decorative gradients. */}
-    <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath={pathname === '/calculator' ? '/calculator' : '/'} saved={saved} onSave={saveWorkspace} showSave={!standalone} /><div className="format-banner"><CircleAlert size={14} /><span>{copyForLocale.formatWarning}{standalone ? ` · ${copyForLocale.demoRoster}` : ''}</span><button type="button" aria-pressed={showHelp} aria-expanded={showHelp} aria-controls="help-callout" onClick={() => setShowHelp(!showHelp)}>{copyForLocale.howItWorks}</button></div>{showHelp && <div className="help-callout" id="help-callout"><Info size={14} /><span>{locale === 'it' ? (standalone ? 'Scegli attaccante e difensore dal roster demo, configura il set attivo e seleziona una mossa: lo scenario non viene salvato.' : 'Scegli un Pokémon dal rail, modifica Stat Points e seleziona una mossa: il route e la matrice si aggiornano insieme.') : (standalone ? 'Choose an attacker and defender from the demo roster, tune the active set, and select a move: this scenario is not saved.' : 'Choose a Pokémon from the rail, tune Stat Points, and select a move: the route and matrix stay in sync.')}</span></div>}<div className={`workspace-grid ${standalone ? 'workspace-grid-standalone' : ''}`}><SetupInspector copyForLocale={copyForLocale} selected={attacker} activeSet={activeSet} activeMoves={activeMoves} setActiveSet={setActiveSet} selectedMoveIndex={selectedMoveIndex} setSelectedMoveIndex={setSelectedMoveIndex} /><div className="main-column"><MatchupRoute copyForLocale={copyForLocale} attacker={attacker} defender={defender} attackerSet={activeSet} defenderSet={defenderSet} attackerIndex={attackerIndex} defenderIndex={defenderIndex} setAttackerIndex={setAttackerIndex} setDefenderIndex={setDefenderIndex} mode={mode} setMode={setMode} activeMoves={activeMoves} selectedMoveIndex={selectedMoveIndex} setSelectedMoveIndex={setSelectedMoveIndex} fieldState={fieldState} setFieldState={setFieldState} fieldSummary={activeFieldSummary} /><OutcomesMatrix copyForLocale={copyForLocale} defender={defender} detailsOpen={detailsOpen} setDetailsOpen={setDetailsOpen} activeMoves={activeMoves} selectedMoveIndex={selectedMoveIndex} fieldSummary={activeFieldSummary} /></div>{!standalone && <TeamRail selectedIndex={attackerIndex} setSelectedIndex={setAttackerIndex} copyForLocale={copyForLocale} />}</div><div className="mobile-context" aria-live="polite"><span>{copyForLocale.defender}: {selectedTarget.name}</span><span>·</span><span>{copyForLocale.ko} {selectedMove.ko} · {copyForLocale.preset}</span></div>
+    <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath={pathname === '/calculator' ? '/calculator' : '/'} saved={saved} onSave={saveWorkspace} showSave={!standalone} /><div className="format-banner"><CircleAlert size={14} /><span>{catalogStatusMessage(catalogMeta, copyForLocale)}{standalone ? ` · ${copyForLocale.demoRoster}` : ''}</span>{catalogMeta?.releaseId && <small>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {catalogMeta.releaseId}</small>}<button type="button" aria-pressed={showHelp} aria-expanded={showHelp} aria-controls="help-callout" onClick={() => setShowHelp(!showHelp)}>{copyForLocale.howItWorks}</button></div>{showHelp && <div className="help-callout" id="help-callout"><Info size={14} /><span>{locale === 'it' ? (standalone ? 'Scegli attaccante e difensore dal catalogo server, configura il set attivo e seleziona una mossa: i risultati restano preset finché l’engine non è certificato.' : 'Scegli un Pokémon dal rail, modifica Stat Points e seleziona una mossa: il route e la matrice si aggiornano insieme.') : (standalone ? 'Choose an attacker and defender from the server catalog, tune the active set, and select a move: results remain presets until the engine is certified.' : 'Choose a Pokémon from the rail, tune the active set, and select a move: the route and matrix stay in sync.')}</span></div>}<div className={`workspace-grid ${standalone ? 'workspace-grid-standalone' : ''}`}><SetupInspector copyForLocale={copyForLocale} selected={attacker} activeSet={activeSet} activeMoves={activeMoves} setActiveSet={setActiveSet} selectedMoveIndex={selectedMoveIndex} setSelectedMoveIndex={setSelectedMoveIndex} /><div className="main-column"><MatchupRoute copyForLocale={copyForLocale} roster={activeTeam} attacker={attacker} defender={defender} attackerSet={activeSet} defenderSet={defenderSet} attackerIndex={attackerIndex} defenderIndex={defenderIndex} setAttackerIndex={setAttackerIndex} setDefenderIndex={setDefenderIndex} mode={mode} setMode={setMode} activeMoves={activeMoves} selectedMoveIndex={selectedMoveIndex} setSelectedMoveIndex={setSelectedMoveIndex} fieldState={fieldState} setFieldState={setFieldState} fieldSummary={activeFieldSummary} /><OutcomesMatrix copyForLocale={copyForLocale} defender={defender} detailsOpen={detailsOpen} setDetailsOpen={setDetailsOpen} activeMoves={activeMoves} selectedMoveIndex={selectedMoveIndex} fieldSummary={activeFieldSummary} /></div>{!standalone && <TeamRail roster={activeTeam} selectedIndex={attackerIndex} setSelectedIndex={setAttackerIndex} copyForLocale={copyForLocale} />}</div><div className="mobile-context" aria-live="polite"><span>{copyForLocale.defender}: {selectedTarget.name}</span><span>·</span><span>{copyForLocale.ko} {selectedMove.ko} · {copyForLocale.preset}</span></div>
   </main>;
 }
 
-function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, onUpdate, onRemove }: { copyForLocale: (typeof copy)[Locale]; locale: Locale; pokemon: Pokemon; slot: BuilderSlot & { pokemonName: string; set: PokemonSet }; onUpdate: (patch: Partial<PokemonSet>) => void; onRemove: () => void }) {
+function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, natureOptions, typeOptions, onUpdate, onRemove }: { copyForLocale: (typeof copy)[Locale]; locale: Locale; pokemon: Pokemon; slot: BuilderSlot & { pokemonName: string; set: PokemonSet }; natureOptions: ApiOption[]; typeOptions: ApiOption[]; onUpdate: (patch: Partial<PokemonSet>) => void; onRemove: () => void }) {
   const { set } = slot;
   const derivedStats = deriveStats(pokemon, set);
   const statEntries = [['HP', 'hp'], ['Atk', 'atk'], ['Def', 'def'], ['Sp. Atk', 'spa'], ['Sp. Def', 'spd'], ['Speed', 'spe']] as const;
-  const moveOptions = Object.values(moveCatalog).map((move) => move.name);
+  const moveOptions = pokemon.api?.learnableMoves.map((move) => optionLabel(move, locale)) ?? Object.values(moveCatalog).map((move) => move.name);
+  const itemOptions = pokemon.api?.items.map((item) => optionLabel(item, locale)) ?? ['Choice Specs', 'Safety Goggles', 'Focus Sash', 'Assault Vest', 'Rocky Helmet', 'Mental Herb', 'Booster Energy'];
+  const abilityOptions = pokemon.api?.abilities.map((ability) => optionLabel(ability, locale)) ?? ['Protosynthesis', 'Intimidate', 'Grassy Surge', 'Unseen Fist', 'Regenerator', 'Armor Tail'];
+  const teraOptions = typeOptions.map((type) => optionLabel(type, locale));
+  const natureLabels = natureOptions.map((nature) => optionLabel(nature, locale));
   const updateStat = (key: StatKey, value: number) => onUpdate({ statPoints: clampStatPoints({ ...set.statPoints, [key]: value }, key) });
   const updateMove = (index: number, value: string) => onUpdate({ moves: set.moves.map((move, moveIndex) => moveIndex === index ? value : move) });
 
@@ -362,10 +448,10 @@ function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, onUpdate, onRe
       <button type="button" className="builder-remove" onClick={onRemove}>{copyForLocale.removePokemon}</button>
     </div>
     <div className="builder-control-grid">
-      <SelectControl label={copyForLocale.tera} value={set.tera} onChange={(value) => onUpdate({ tera: value })} options={['Normal', 'Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Ghost', 'Fairy', 'Dark']} />
-      <SelectControl label={copyForLocale.item} value={set.item} onChange={(value) => onUpdate({ item: value })} options={['Choice Specs', 'Safety Goggles', 'Focus Sash', 'Assault Vest', 'Rocky Helmet', 'Mental Herb', 'Booster Energy']} />
-      <SelectControl label={copyForLocale.ability} value={set.ability} onChange={(value) => onUpdate({ ability: value })} options={['Protosynthesis', 'Intimidate', 'Grassy Surge', 'Unseen Fist', 'Regenerator', 'Armor Tail']} />
-      <SelectControl label={copyForLocale.nature} value={set.nature} onChange={(value) => onUpdate({ nature: value })} options={['Timid (+Spe, -Atk)', 'Modest (+SpA, -Atk)', 'Careful (+SpD, -SpA)', 'Adamant (+Atk, -SpA)', 'Jolly (+Spe, -SpA)', 'Bold (+Def, -Atk)', 'Quiet (+SpA, -Spe)']} />
+      <SelectControl label={copyForLocale.tera} value={set.tera} onChange={(value) => onUpdate({ tera: value })} options={teraOptions.length ? teraOptions : ['Normal']} />
+      <SelectControl label={copyForLocale.item} value={set.item} onChange={(value) => onUpdate({ item: value })} options={itemOptions.length ? itemOptions : ['None']} />
+      <SelectControl label={copyForLocale.ability} value={set.ability} onChange={(value) => onUpdate({ ability: value })} options={abilityOptions.length ? abilityOptions : ['—']} />
+      <SelectControl label={copyForLocale.nature} value={set.nature} onChange={(value) => onUpdate({ nature: value })} options={natureLabels.length ? natureLabels : ['Hardy']} />
     </div>
     <div className="builder-divider" />
     <div className="builder-section-heading"><div><h2>{copyForLocale.statPoints}</h2><p>{copyForLocale.statHint}</p></div><strong>{Object.values(set.statPoints).reduce((sum, value) => sum + value, 0)} / 66</strong></div>
@@ -383,10 +469,44 @@ function BuilderWorkspace() {
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [query, setQuery] = useState('');
   const [saved, setSaved] = useState(false);
+  const [catalogEntries, setCatalogEntries] = useState<Pokemon[] | null>(null);
+  const [catalogMeta, setCatalogMeta] = useState<ApiMeta | null>(null);
+  const [catalogFormat, setCatalogFormat] = useState<ApiFormat | null>(null);
+  const [catalogOptions, setCatalogOptions] = useState<{ types: ApiOption[]; natures: ApiOption[] }>({ types: [], natures: [] });
+  const [catalogError, setCatalogError] = useState<ApiClientError | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [storedSlots, setStoredSlots] = useState<unknown[] | null>(null);
   const copyForLocale = copy[locale];
+  const loadCatalog = useCallback(async (signal?: AbortSignal) => {
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      const context = await getCatalogContext({ formatId: defaultFormatId, signal });
+      setCatalogFormat(context.data.format);
+      setCatalogOptions({ types: context.data.types, natures: context.data.natures });
+      const response = await getCatalogPokemon({ formatId: context.data.format.id, dataReleaseId: context.meta.releaseId ?? undefined, locale, signal });
+      const entries = response.data.pokemon.map(viewPokemonFromApi);
+      setCatalogEntries(entries);
+      setCatalogMeta(response.meta);
+      setSlots((current) => restoreBuilderSlots(storedSlots ?? current, entries));
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      const clientError = error instanceof ApiClientError ? error : new ApiClientError('The data service is unavailable.', 503, 'DATA_SERVICE_UNAVAILABLE');
+      setCatalogError(clientError);
+      if (storedSlots) setSlots(restoreBuilderSlots(storedSlots, pokemonCatalog));
+    } finally {
+      if (!signal?.aborted) setCatalogLoading(false);
+    }
+  }, [locale, storedSlots]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => void loadCatalog(controller.signal), 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [loadCatalog]);
+  const activeCatalog = catalogEntries ?? pokemonCatalog;
   const selected = slots[selectedSlot];
-  const takenNames = new Set(slots.filter((slot, index) => slot && index !== selectedSlot).map((slot) => slot?.pokemonName));
-  const visibleCatalog = pokemonCatalog.filter((pokemon) => !takenNames.has(pokemon.name) && pokemon.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const takenNames = new Set(slots.filter((slot, index) => slot && index !== selectedSlot).map((slot) => slot?.pokemonId ?? slot?.pokemonName));
+  const visibleCatalog = activeCatalog.filter((pokemon) => !takenNames.has(pokemon.api?.formId ?? pokemon.name) && [pokemon.name, pokemon.nameIt ?? '', pokemon.role, pokemon.roleIt ?? ''].join(' ').toLowerCase().includes(query.trim().toLowerCase()));
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -394,7 +514,7 @@ function BuilderWorkspace() {
         const stored = JSON.parse(window.localStorage.getItem('vgc-forge:builder-v1') ?? '{}') as { locale?: Locale; teamName?: string; slots?: BuilderSlot[]; selectedSlot?: number };
         if (stored.locale === 'en') setLocale('en');
         if (typeof stored.teamName === 'string') setTeamName(stored.teamName);
-        if (Array.isArray(stored.slots)) setSlots(restoreBuilderSlots(stored.slots));
+        if (Array.isArray(stored.slots)) setStoredSlots(stored.slots);
         if (typeof stored.selectedSlot === 'number' && stored.selectedSlot >= 0 && stored.selectedSlot < 6) setSelectedSlot(stored.selectedSlot);
       } catch {
         // Ignore malformed local drafts and keep a clean six-slot builder.
@@ -408,10 +528,11 @@ function BuilderWorkspace() {
     setSlots((current) => current.map((slot, index) => index === selectedSlot && slot ? { ...slot, set: { ...slot.set, ...patch } } : slot));
   };
   const choosePokemon = (pokemonName: string) => {
-    if (takenNames.has(pokemonName)) return;
-    const pokemon = pokemonCatalog.find((entry) => entry.name === pokemonName);
+    const pokemon = activeCatalog.find((entry) => entry.name === pokemonName);
     if (!pokemon) return;
-    setSlots((current) => current.map((slot, index) => index === selectedSlot ? { pokemonName, set: cloneSet(defaultSets[pokemonName]) } : slot));
+    const pokemonKey = pokemon.api?.formId ?? pokemon.name;
+    if (takenNames.has(pokemonKey)) return;
+    setSlots((current) => current.map((slot, index) => index === selectedSlot ? { pokemonName: pokemon.name, pokemonId: pokemonKey, set: setForPokemon(pokemon) } : slot));
     setQuery('');
   };
   const addPokemon = () => {
@@ -430,11 +551,11 @@ function BuilderWorkspace() {
 
   return <main className="forge-shell builder-shell">
     <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath="/" saved={saved} onSave={saveBuilder} showSave />
-    <div className="format-banner"><CircleAlert size={14} /><span>{copyForLocale.formatWarning}</span><span className="builder-save-note">{saved ? copyForLocale.savedLocally : copyForLocale.autoSave}</span></div>
-    <section className="builder-header"><div><h1>{teamName || copyForLocale.newTeam}</h1><p>{copyForLocale.format} · {slots.filter(Boolean).length} / 6</p></div><label className="builder-name-field"><span>{copyForLocale.teamName}</span><input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder={copyForLocale.newTeam} /></label></section>
+    <div className="format-banner" role={catalogError ? 'alert' : undefined} aria-live="polite"><CircleAlert size={14} /><span>{catalogLoading ? copyForLocale.loadingCatalog : catalogError ? catalogErrorMessage(catalogError, copyForLocale) : catalogStatusMessage(catalogMeta, copyForLocale)}</span>{catalogMeta?.releaseId && <small>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {catalogMeta.releaseId}</small>}{catalogError ? <button type="button" onClick={() => void loadCatalog()}>{copyForLocale.retry}</button> : <span className="builder-save-note">{saved ? copyForLocale.savedLocally : copyForLocale.autoSave}</span>}</div>
+    <section className="builder-header"><div><h1>{teamName || copyForLocale.newTeam}</h1><p>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {slots.filter(Boolean).length} / 6</p></div><label className="builder-name-field"><span>{copyForLocale.teamName}</span><input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder={copyForLocale.newTeam} /></label></section>
     <div className="builder-grid">
-      <aside className="builder-roster" aria-label={copyForLocale.team}><div className="builder-roster-heading"><div><h2>{copyForLocale.team}</h2><p>{copyForLocale.catalogHint}</p></div><strong>{slots.filter(Boolean).length} / 6</strong></div><div className="builder-slots">{slots.map((slot, index) => { const pokemon = slot ? pokemonCatalog.find((entry) => entry.name === slot.pokemonName) : null; return <button type="button" key={index} aria-pressed={selectedSlot === index} className={`builder-slot ${selectedSlot === index ? 'builder-slot-active' : ''} ${slot ? '' : 'builder-slot-empty'}`} onClick={() => setSelectedSlot(index)}><span className="builder-slot-number">{index + 1}</span>{pokemon ? <span className="builder-slot-copy"><strong>{pokemon.name}</strong><small>{roleLabel(pokemon.role, locale)}</small><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span></span> : <span className="builder-slot-copy"><strong>{copyForLocale.emptySlot}</strong><small>{copyForLocale.addPokemon}</small></span>}</button>; })}</div><button type="button" className="add-button" onClick={addPokemon} disabled={slots.every(Boolean)}><Plus size={16} /> {copyForLocale.addPokemon}</button></aside>
-      <section className="builder-editor" aria-live="polite">{selected ? <BuilderSetEditor copyForLocale={copyForLocale} locale={locale} pokemon={pokemonCatalog.find((entry) => entry.name === selected.pokemonName)!} slot={selected} onUpdate={updateSlot} onRemove={removePokemon} /> : <div className="builder-empty-state"><div className="builder-empty-icon"><Plus size={22} /></div><h2>{copyForLocale.selectSlot}</h2><p>{copyForLocale.emptyBuilderHelp}</p><label className="builder-search"><span>{copyForLocale.searchPokemon}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copyForLocale.searchPokemon} /></label><div className="catalog-heading"><h2>{copyForLocale.catalog}</h2><span>{visibleCatalog.length}</span></div><div className="catalog-list">{visibleCatalog.map((pokemon) => <button type="button" className="catalog-option" key={pokemon.name} onClick={() => choosePokemon(pokemon.name)}><span className="pokemon-monogram">{pokemon.name.slice(0, 2).toUpperCase()}</span><span><strong>{pokemon.name}</strong><small>{roleLabel(pokemon.role, locale)}</small></span><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span><ArrowRight size={16} aria-hidden="true" /></button>)}{visibleCatalog.length === 0 && <p className="catalog-empty">{copyForLocale.noResults}</p>}</div></div>}</section>
+      <aside className="builder-roster" aria-label={copyForLocale.team}><div className="builder-roster-heading"><div><h2>{copyForLocale.team}</h2><p>{catalogError ? catalogErrorMessage(catalogError, copyForLocale) : copyForLocale.catalogHint}</p></div><strong>{slots.filter(Boolean).length} / 6</strong></div><div className="builder-slots">{slots.map((slot, index) => { const pokemon = slot ? activeCatalog.find((entry) => entry.api?.formId === slot.pokemonId || entry.name === slot.pokemonName) : null; return <button type="button" key={index} aria-pressed={selectedSlot === index} className={`builder-slot ${selectedSlot === index ? 'builder-slot-active' : ''} ${slot ? '' : 'builder-slot-empty'}`} onClick={() => setSelectedSlot(index)}><span className="builder-slot-number">{index + 1}</span>{pokemon ? <span className="builder-slot-copy"><strong>{locale === 'it' ? pokemon.nameIt ?? pokemon.name : pokemon.name}</strong><small>{locale === 'it' ? pokemon.roleIt ?? pokemon.role : pokemon.role}</small><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span></span> : <span className="builder-slot-copy"><strong>{copyForLocale.emptySlot}</strong><small>{copyForLocale.addPokemon}</small></span>}</button>; })}</div><button type="button" className="add-button" onClick={addPokemon} disabled={slots.every(Boolean) || catalogLoading}><Plus size={16} /> {copyForLocale.addPokemon}</button></aside>
+      <section className="builder-editor" aria-live="polite">{selected && activeCatalog.find((entry) => entry.api?.formId === selected.pokemonId || entry.name === selected.pokemonName) ? <BuilderSetEditor copyForLocale={copyForLocale} locale={locale} pokemon={activeCatalog.find((entry) => entry.api?.formId === selected.pokemonId || entry.name === selected.pokemonName)!} slot={selected} natureOptions={catalogOptions.natures} typeOptions={catalogOptions.types} onUpdate={updateSlot} onRemove={removePokemon} /> : <div className="builder-empty-state">{catalogLoading ? <output>{copyForLocale.loadingCatalog}</output> : catalogError ? <div role="alert"><p>{catalogErrorMessage(catalogError, copyForLocale)}</p><button type="button" onClick={() => void loadCatalog()}>{copyForLocale.retry}</button></div> : <><div className="builder-empty-icon"><Plus size={22} /></div><h2>{copyForLocale.selectSlot}</h2><p>{copyForLocale.emptyBuilderHelp}</p><label className="builder-search"><span>{copyForLocale.searchPokemon}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copyForLocale.searchPokemon} /></label><div className="catalog-heading"><h2>{copyForLocale.catalog}</h2><span>{visibleCatalog.length}</span></div><div className="catalog-list">{visibleCatalog.map((pokemon) => <button type="button" className="catalog-option" key={pokemon.name} onClick={() => choosePokemon(pokemon.name)}><span className="pokemon-monogram">{pokemon.name.slice(0, 2).toUpperCase()}</span><span><strong>{locale === 'it' ? pokemon.nameIt ?? pokemon.name : pokemon.name}</strong><small>{locale === 'it' ? pokemon.roleIt ?? pokemon.role : pokemon.role}</small></span><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span><ArrowRight size={16} aria-hidden="true" /></button>)}{visibleCatalog.length === 0 && <p className="catalog-empty">{copyForLocale.noResults}</p>}</div></>}</div>}</section>
     </div>
   </main>;
 }

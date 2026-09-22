@@ -2,6 +2,14 @@ export type Locale = 'it' | 'en';
 export type DataStatus = 'certified' | 'provisional' | 'unverified';
 export type BattleMode = 'singles' | 'doubles';
 export type FormatContext = 'ranked-battles' | 'vgc-championship' | 'fixture';
+export type CoverageStatus = 'complete' | 'partial' | 'unknown' | 'unavailable';
+export type DataCoverage = {
+  catalog: CoverageStatus;
+  legalities: CoverageStatus;
+  learnsets: CoverageStatus;
+  damageEngine: 'available' | 'unavailable';
+  teamValidation: 'available' | 'preview-only' | 'unavailable';
+};
 export type StatKey = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
 export type StatValues = Record<StatKey, number>;
 
@@ -31,6 +39,7 @@ export type DataMeta = {
   dataStatus: DataStatus;
   source: 'bundled-preview' | 'postgresql';
   gaps: string[];
+  coverage: DataCoverage;
 };
 
 export type FormatProfile = {

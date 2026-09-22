@@ -212,6 +212,21 @@ function mapMeta(row: ReleaseRow): DataMeta {
     dataStatus: row.data_status,
     source: 'postgresql',
     gaps: row.data_status === 'certified' ? [] : ['OFFICIAL_REVIEW_PENDING'],
+    coverage: row.data_status === 'certified'
+      ? {
+          catalog: 'complete',
+          legalities: 'complete',
+          learnsets: 'complete',
+          damageEngine: 'unavailable',
+          teamValidation: 'unavailable',
+        }
+      : {
+          catalog: 'unknown',
+          legalities: 'unknown',
+          learnsets: 'unknown',
+          damageEngine: 'unavailable',
+          teamValidation: 'unavailable',
+        },
   };
 }
 

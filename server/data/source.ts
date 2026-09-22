@@ -61,7 +61,9 @@ export function dataSourceMeta(): Record<string, unknown> {
   const state = getDataSourceState();
   return {
     dataSource: state.kind,
+    dataSourceConfigured: state.configured,
     dataSourceReady: state.ready,
     dataSourceReason: state.reason,
+    previewFallback: state.kind === 'bundled-preview',
   };
 }

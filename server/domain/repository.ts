@@ -18,6 +18,13 @@ export const dataMeta: DataMeta = {
   dataStatus: 'unverified',
   source: 'bundled-preview',
   gaps: ['OFFICIAL_REVIEW_PENDING', 'LEARNSETS_MISSING', 'DAMAGE_ENGINE_UNVERIFIED'],
+  coverage: {
+    catalog: 'partial',
+    legalities: 'partial',
+    learnsets: 'partial',
+    damageEngine: 'unavailable',
+    teamValidation: 'preview-only',
+  },
 };
 
 export const formatProfile: FormatProfile = {
