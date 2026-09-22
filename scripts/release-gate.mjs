@@ -118,7 +118,17 @@ try {
   const calculator = await request('/api/v1/calculator', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ formatId, dataReleaseId: releaseId, attacker: {}, defender: {}, move: {} }),
+    body: JSON.stringify({
+      formatId,
+      dataReleaseId: releaseId,
+      mode: 'doubles',
+      attacker: {},
+      defender: {},
+      moveId: 'move:moonblast',
+      field: { weather: 'clear', terrain: 'none', reflect: false, lightScreen: false, auroraVeil: false, safeguard: false, tailwind: false, trickRoom: false, gravity: false },
+      critical: false,
+      spread: false,
+    }),
   });
   assert(calculator.response.status === 422, `calculator returned ${calculator.response.status}`);
   assert(calculator.body.issues?.[0]?.code === 'DATA_UNVERIFIED', 'calculator did not expose DATA_UNVERIFIED');
@@ -126,6 +136,14 @@ try {
   assert(calculator.body.meta?.releaseId === releaseId, 'calculator error release metadata mismatch');
   assert(calculator.body.meta?.checksum === context.body.meta?.checksum, 'calculator error checksum metadata mismatch');
   assert(calculator.body.meta?.coverage, 'calculator error coverage metadata missing');
+
+  const malformedCalculator = await request('/api/v1/calculator', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ formatId, dataReleaseId: releaseId }),
+  });
+  assert(malformedCalculator.response.status === 400, `malformed calculator returned ${malformedCalculator.response.status}`);
+  assert(malformedCalculator.body.issues?.some((entry) => entry.code === 'BATTLE_MODE_REQUIRED'), 'malformed calculator did not expose request validation issues');
 
   const unknownRelease = await request(`/api/v1/catalog/context?formatId=${formatId}&dataReleaseId=release-does-not-exist`);
   assert(unknownRelease.response.status === 404, `unknown release returned ${unknownRelease.response.status}`);
@@ -141,7 +159,7 @@ try {
     releaseId,
     dataStatus: context.body.meta.dataStatus,
     catalogCount: catalog.body.data.pokemon.length,
-    checks: ['fixture-checksum', 'context-coverage', 'catalog', 'calculator-unverified', 'unknown-release', 'invalid-pagination'],
+    checks: ['fixture-checksum', 'context-coverage', 'catalog', 'calculator-request-validation', 'calculator-unverified', 'unknown-release', 'invalid-pagination'],
   }, null, 2));
 } finally {
   if (ownsServer) server.kill('SIGTERM');
