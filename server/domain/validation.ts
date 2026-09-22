@@ -1,5 +1,5 @@
 import { findCatalogPokemon, getFormat, natureOptions } from './repository';
-import type { CatalogPokemon, CompetitiveSet, FormatProfile, Issue, StatValues } from './types';
+import type { CatalogPokemon, CompetitiveSet, FormatProfile, Issue, Option, StatValues } from './types';
 import { statKeys } from './types';
 
 export const issue = (path: string, code: string, message: string, blocking = true, details?: Record<string, unknown>): Issue => ({ path, code, message, blocking, ...(details ? { details } : {}) });
@@ -18,6 +18,8 @@ export type ValidationCatalog = {
   format: FormatProfile;
   pokemon: CatalogPokemon[];
   natureIds: string[];
+  natures?: Option[];
+  types?: Option[];
 };
 
 const natureMultipliers: Record<string, Partial<Record<keyof StatValues, number>>> = {

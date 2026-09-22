@@ -104,6 +104,15 @@ export type ApiTeamRevision = {
   updatedAt: string;
 };
 
+export type ApiShowdownImport = {
+  slots: Array<ApiTeamSet | null>;
+  issues: ApiIssue[];
+};
+
+export type ApiShowdownExport = {
+  text: string;
+};
+
 export class ApiClientError extends Error {
   constructor(
     message: string,
@@ -181,6 +190,14 @@ export async function saveTeamRevision(input: { name: string; formatId: string; 
 
 export async function getTeamRevision(id: string, signal?: AbortSignal) {
   return getJson<ApiTeamRevision>(`/api/v1/teams/revisions/${encodeURIComponent(id)}`, signal);
+}
+
+export async function importShowdown(input: { formatId: string; dataReleaseId: string; text: string; locale: ApiLocale }, signal?: AbortSignal) {
+  return requestJson<ApiShowdownImport>('/api/v1/showdown/import', { method: 'POST', body: input, signal });
+}
+
+export async function exportShowdown(input: { formatId: string; dataReleaseId: string; slots: Array<ApiTeamSet | null> }, signal?: AbortSignal) {
+  return requestJson<ApiShowdownExport>('/api/v1/showdown/export', { method: 'POST', body: input, signal });
 }
 
 export { defaultFormatId };

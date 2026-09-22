@@ -31,7 +31,7 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ApiClientError, defaultFormatId, getCatalogContext, getCatalogPokemon, getTeamRevision, saveTeamRevision, type ApiFormat, type ApiIssue, type ApiMeta, type ApiOption, type ApiPokemon, type ApiTeamSet } from './lib/api';
+import { ApiClientError, defaultFormatId, exportShowdown, getCatalogContext, getCatalogPokemon, getTeamRevision, importShowdown, saveTeamRevision, type ApiFormat, type ApiIssue, type ApiMeta, type ApiOption, type ApiPokemon, type ApiTeamSet } from './lib/api';
 
 type Locale = 'it' | 'en';
 type Mode = 'doubles' | 'singles';
@@ -246,6 +246,47 @@ function revisionIssueMessage(issue: ApiIssue, locale: Locale) {
   const location = issue.path.match(/^\/slots\/(\d+)/);
   const prefix = location ? `Slot ${Number(location[1]) + 1}: ` : '';
   return `${prefix}${names[issue.code]?.[locale === 'it' ? 0 : 1] ?? (locale === 'it' ? `Controlla ${issue.path} (${issue.code})` : issue.message)}`;
+}
+
+function showdownIssueMessage(issue: ApiIssue, locale: Locale) {
+  const italian: Record<string, string> = {
+    ABILITY_REQUIRED: 'Indica un’abilità per il Pokémon.',
+    AMBIGUOUS_SHOWDOWN_NAME: 'Questo nome Showdown corrisponde a più voci del catalogo.',
+    DATA_UNVERIFIED: 'La release non è verificata per importazione o esportazione.',
+    DUPLICATE_SHOWDOWN_FIELD: 'Un campo Showdown è ripetuto nel set.',
+    DUPLICATE_STAT_POINT: 'Una statistica compare più volte negli Stat Points.',
+    DUPLICATE_MOVE: 'Le mosse del set devono essere tutte diverse.',
+    FORM_MISMATCH: 'La forma scelta non appartiene alla specie indicata.',
+    FORMAT_INCOMPATIBLE: 'La specie o forma non è disponibile in questo formato.',
+    ITEM_UNAVAILABLE: 'Lo strumento non è disponibile per questa forma nel catalogo.',
+    ITEM_CLAUSE: 'Uno strumento può essere usato una sola volta nel team.',
+    LEGALITY_NOT_VERIFIED: 'La legalità del set non è verificata.',
+    LEGACY_CONVERSION_POLICY_UNAVAILABLE: 'Non esiste ancora una conversione verificata da EV/IV a Stat Points di Champions.',
+    LEVEL_UNSUPPORTED: 'Il livello del set non è supportato dal formato.',
+    MOVE_COUNT: 'Il set deve contenere da una a quattro mosse.',
+    MOVE_NOT_LEARNABLE: 'Questa mossa non è disponibile per la forma scelta.',
+    NATURE_REQUIRED: 'Indica una natura per il Pokémon.',
+    UNKNOWN_NATURE: 'Questa natura non è presente nella release selezionata.',
+    SHOWDOWN_TEXT_REQUIRED: 'Incolla un team Showdown prima di importare.',
+    SHOWDOWN_ALIAS_MISSING: 'Manca un nome Showdown verificato per questo valore.',
+    SHOWDOWN_HEADER_REQUIRED: 'Il set non ha un’intestazione Showdown valida.',
+    STAT_POINTS_RANGE: 'Gli Stat Points devono essere compresi tra 0 e 32 per statistica.',
+    STAT_POINTS_REQUIRED: 'Indica gli Stat Points del set.',
+    STAT_POINTS_SYNTAX: 'La riga degli Stat Points non è valida.',
+    STAT_POINTS_TOTAL: 'Il totale degli Stat Points supera 66.',
+    STAT_POINTS_OBJECT_REQUIRED: 'Servono tutti e sei i valori degli Stat Points.',
+    SPECIES_CLAUSE: 'Una specie può comparire una sola volta nel team.',
+    TEAM_EMPTY: 'Il testo non contiene Pokémon.',
+    TOO_MANY_SETS: 'Il team contiene più di sei Pokémon.',
+    UNKNOWN_SHOWDOWN_NAME: 'Questo nome Showdown non è nel catalogo verificato.',
+    UNSUPPORTED_SHOWDOWN_FIELD: 'Il set contiene un campo Showdown non supportato.',
+    UNSUPPORTED_SHOWDOWN_LINE: 'Il set contiene una riga Showdown non supportata.',
+    UNSUPPORTED_FIELD: 'Questo campo non è supportato dalla release selezionata.',
+    ABILITY_FORM_MISMATCH: 'L’abilità non è disponibile per la forma scelta.',
+    EXPORT_INPUT_REQUIRED: 'Serve un team con slot validi da esportare.',
+  };
+  const description = locale === 'it' ? italian[issue.code] ?? issue.message : issue.message;
+  return `${description} (${issue.code}${issue.path && issue.path !== '/' ? ` · ${issue.path}` : ''})`;
 }
 
 function clampStatPoints(raw: Record<StatKey, number>, changedKey: StatKey): Record<StatKey, number> {
@@ -695,6 +736,12 @@ function BuilderWorkspace() {
   const [revisionBusy, setRevisionBusy] = useState<'save' | 'load' | null>(null);
   const [revisionMessage, setRevisionMessage] = useState<string | null>(null);
   const [revisionIssues, setRevisionIssues] = useState<string[]>([]);
+  const [showdownMode, setShowdownMode] = useState<'import' | 'export' | null>(null);
+  const [showdownText, setShowdownText] = useState('');
+  const [showdownOutput, setShowdownOutput] = useState('');
+  const [showdownBusy, setShowdownBusy] = useState(false);
+  const [showdownMessage, setShowdownMessage] = useState<string | null>(null);
+  const [showdownIssues, setShowdownIssues] = useState<string[]>([]);
   const [catalogEntries, setCatalogEntries] = useState<Pokemon[] | null>(null);
   const [catalogMeta, setCatalogMeta] = useState<ApiMeta | null>(null);
   const [catalogFormat, setCatalogFormat] = useState<ApiFormat | null>(null);
@@ -705,6 +752,10 @@ function BuilderWorkspace() {
   const [storedCatalog, setStoredCatalog] = useState<Pokemon[] | null>(null);
   const initialSlotsApplied = useRef(false);
   const copyForLocale = copy[locale];
+  const showdownCoverageReady = catalogMeta?.coverage?.catalog === 'complete'
+    && catalogMeta.coverage.legalities === 'complete'
+    && catalogMeta.coverage.learnsets === 'complete';
+  const showdownReady = catalogMeta?.dataStatus === 'certified' && showdownCoverageReady && !!catalogFormat && !!catalogMeta.releaseId && !!catalogEntries && !catalogLoading && !catalogError;
   const loadCatalog = useCallback(async (signal?: AbortSignal) => {
     setCatalogLoading(true);
     setCatalogError(null);
@@ -766,6 +817,7 @@ function BuilderWorkspace() {
 
   const updateSlot = (patch: Partial<PokemonSet>) => {
     setRevisionDirty(true);
+    setShowdownOutput('');
     setSlots((current) => current.map((slot, index) => index === selectedSlot && slot ? { ...slot, set: { ...slot.set, ...patch } } : slot));
   };
   const choosePokemon = (pokemonName: string) => {
@@ -775,6 +827,7 @@ function BuilderWorkspace() {
     if (takenNames.has(pokemonKey)) return;
     setSlots((current) => current.map((slot, index) => index === selectedSlot ? { pokemonName: pokemon.name, pokemonId: pokemonKey, set: setForPokemon(pokemon) } : slot));
     setRevisionDirty(true);
+    setShowdownOutput('');
     setQuery('');
   };
   const addPokemon = () => {
@@ -784,6 +837,7 @@ function BuilderWorkspace() {
   const removePokemon = () => {
     setSlots((current) => current.map((slot, index) => index === selectedSlot ? null : slot));
     setRevisionDirty(true);
+    setShowdownOutput('');
     setQuery('');
   };
   const saveBuilder = (nextRevisionId: string | null = revisionId) => {
@@ -863,11 +917,92 @@ function BuilderWorkspace() {
     }
   };
 
+  const runShowdownImport = async () => {
+    if (!showdownReady || !catalogFormat || !catalogMeta?.releaseId || !catalogEntries || !showdownText.trim() || showdownBusy) return;
+    setShowdownBusy(true);
+    setShowdownMessage(null);
+    setShowdownIssues([]);
+    try {
+      const response = await importShowdown({ formatId: catalogFormat.id, dataReleaseId: catalogMeta.releaseId, text: showdownText, locale });
+      if (response.data.issues?.some((issue) => issue.blocking)) {
+        setShowdownMessage(locale === 'it' ? 'Importazione rifiutata. Il team attuale è intatto.' : 'Import rejected. Your current team is unchanged.');
+        setShowdownIssues(response.data.issues.map((issue) => showdownIssueMessage(issue, locale)));
+        return;
+      }
+      const imported = builderSlotsFromRevision(response.data.slots, catalogEntries, catalogOptions.natures, catalogOptions.types);
+      if (!imported) {
+        setShowdownMessage(locale === 'it' ? 'Il team importato contiene valori assenti dal catalogo corrente. Il team attuale è intatto.' : 'The imported team contains values missing from the current catalog. Your current team is unchanged.');
+        return;
+      }
+      if (slots.some(Boolean) && !window.confirm(locale === 'it' ? 'Sostituire il team attuale con quello importato? La bozza locale verrà aggiornata.' : 'Replace the current team with the imported one? Your local draft will be updated.')) return;
+      const firstFilled = imported.findIndex(Boolean);
+      setSlots(imported);
+      setSelectedSlot(firstFilled < 0 ? 0 : firstFilled);
+      setRevisionId(null);
+      setRevisionDirty(false);
+      setShowdownOutput('');
+      try {
+        window.localStorage.setItem('vgc-forge:builder-v1', JSON.stringify({ locale, teamName, slots: imported, selectedSlot: firstFilled < 0 ? 0 : firstFilled, revisionId: null, catalog: catalogEntries }));
+        setSaved(true);
+      } catch {
+        setShowdownMessage(locale === 'it' ? 'Team importato, ma il browser non ha salvato la bozza. Usa «Salva bozza».' : 'Team imported, but the browser did not save the draft. Use “Save draft”.');
+        return;
+      }
+      setShowdownMessage(locale === 'it' ? 'Team importato e salvato nel browser.' : 'Team imported and saved in the browser.');
+      setShowdownIssues((response.data.issues ?? []).map((issue) => showdownIssueMessage(issue, locale)));
+    } catch (error) {
+      const clientError = error instanceof ApiClientError ? error : new ApiClientError('The data service is unavailable.', 503);
+      setShowdownMessage(locale === 'it' ? 'Importazione rifiutata. Il team attuale è intatto.' : 'Import rejected. Your current team is unchanged.');
+      setShowdownIssues(clientError.issues.length ? clientError.issues.map((issue) => showdownIssueMessage(issue, locale)) : [revisionErrorMessage(clientError, locale)]);
+    } finally {
+      setShowdownBusy(false);
+    }
+  };
+  const runShowdownExport = async () => {
+    if (!showdownReady || !catalogFormat || !catalogMeta?.releaseId || !catalogEntries || showdownBusy) return;
+    setShowdownMessage(null);
+    setShowdownIssues([]);
+    setShowdownOutput('');
+    const converted = revisionSlotsFromBuilder(slots, catalogEntries, catalogFormat, catalogOptions.types, catalogOptions.natures);
+    if (converted.missing.length) {
+      setShowdownMessage(locale === 'it' ? 'Correggi i valori non presenti nel catalogo prima di esportare.' : 'Correct values missing from the catalog before exporting.');
+      setShowdownIssues(converted.missing.map((field) => `Slot ${field.replace(':', ' · ')}`));
+      return;
+    }
+    setShowdownBusy(true);
+    try {
+      const response = await exportShowdown({ formatId: catalogFormat.id, dataReleaseId: catalogMeta.releaseId, slots: converted.slots });
+      setShowdownOutput(response.data.text);
+      setShowdownMessage(locale === 'it' ? 'Testo Showdown pronto da copiare.' : 'Showdown text is ready to copy.');
+    } catch (error) {
+      const clientError = error instanceof ApiClientError ? error : new ApiClientError('The data service is unavailable.', 503);
+      setShowdownMessage(locale === 'it' ? 'Esportazione non riuscita. Il team attuale è intatto.' : 'Export failed. Your current team is unchanged.');
+      setShowdownIssues(clientError.issues.length ? clientError.issues.map((issue) => showdownIssueMessage(issue, locale)) : [revisionErrorMessage(clientError, locale)]);
+    } finally {
+      setShowdownBusy(false);
+    }
+  };
+  const copyShowdownOutput = async () => {
+    if (!showdownOutput) return;
+    try {
+      await navigator.clipboard.writeText(showdownOutput);
+      setShowdownMessage(locale === 'it' ? 'Testo Showdown copiato negli appunti.' : 'Showdown text copied to the clipboard.');
+    } catch {
+      setShowdownMessage(locale === 'it' ? 'Copia automatica non disponibile: seleziona il testo e copialo manualmente.' : 'Automatic copy is unavailable: select the text and copy it manually.');
+    }
+  };
+
   return <main className="forge-shell builder-shell">
     <TopBar locale={locale} setLocale={setLocale} copyForLocale={copyForLocale} activePath="/" saved={saved} onSave={() => saveBuilder()} showSave />
     <div className="format-banner" role={catalogError ? 'alert' : undefined} aria-live="polite"><CircleAlert size={14} /><span>{catalogLoading ? copyForLocale.loadingCatalog : catalogError ? catalogErrorMessage(catalogError, copyForLocale) : catalogStatusMessage(catalogMeta, copyForLocale)}</span>{catalogMeta?.releaseId && <small>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {catalogMeta.releaseId}</small>}{catalogError ? <button type="button" onClick={() => void loadCatalog()}>{copyForLocale.retry}</button> : <span className="builder-save-note">{saved ? copyForLocale.savedLocally : copyForLocale.autoSave}</span>}</div>
     <section className="builder-header"><div><h1>{teamName || copyForLocale.newTeam}</h1><p>{catalogFormat ? optionLabel(catalogFormat, locale) : copyForLocale.format} · {slots.filter(Boolean).length} / 6</p></div><label className="builder-name-field"><span>{copyForLocale.teamName}</span><input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder={copyForLocale.newTeam} /></label></section>
     <section className="builder-revisions" aria-label={locale === 'it' ? 'Revisioni del team' : 'Team revisions'}><div className="builder-revision-copy"><strong>{locale === 'it' ? 'Revisioni server' : 'Server revisions'}</strong><span>{revisionId ? `${locale === 'it' ? 'Revisione collegata' : 'Linked revision'} · ${revisionId.slice(0, 8)}` : (locale === 'it' ? 'Nessuna revisione server salvata' : 'No server revision saved')}{revisionDirty ? ` · ${locale === 'it' ? 'Modifiche non salvate' : 'Unsaved changes'}` : ''}</span></div><div className="builder-revision-actions"><button type="button" onClick={() => void saveRevision()} disabled={!!revisionBusy || catalogLoading || !!catalogError}>{revisionBusy === 'save' ? (locale === 'it' ? 'Salvataggio…' : 'Saving…') : (locale === 'it' ? 'Salva revisione' : 'Save revision')}</button><button type="button" onClick={() => void loadRevision()} disabled={!revisionId || !!revisionBusy || catalogLoading || !!catalogError}>{revisionBusy === 'load' ? (locale === 'it' ? 'Caricamento…' : 'Loading…') : (locale === 'it' ? 'Carica revisione' : 'Load revision')}</button></div>{revisionMessage && <div className="builder-revision-feedback" role={revisionIssues.length ? 'alert' : 'status'}><p>{revisionMessage}</p>{revisionIssues.length > 0 && <ul>{revisionIssues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul>}</div>}</section>
+    <section className="builder-showdown" aria-labelledby="builder-showdown-title"><div className="builder-showdown-head"><div><h2 id="builder-showdown-title">Showdown</h2><p>{locale === 'it' ? 'Importa o esporta un team di testo. Le regole Champions vengono controllate dal server.' : 'Import or export a text team. The server checks Champions rules.'}</p></div><fieldset className="builder-showdown-tabs" aria-label={locale === 'it' ? 'Operazione Showdown' : 'Showdown operation'}><button type="button" aria-pressed={showdownMode === 'import'} onClick={() => { setShowdownMode(showdownMode === 'import' ? null : 'import'); setShowdownMessage(null); setShowdownIssues([]); }}>{locale === 'it' ? 'Importa' : 'Import'}</button><button type="button" aria-pressed={showdownMode === 'export'} onClick={() => { setShowdownMode(showdownMode === 'export' ? null : 'export'); setShowdownMessage(null); setShowdownIssues([]); }}>{locale === 'it' ? 'Esporta' : 'Export'}</button></fieldset></div>
+      {!showdownReady && <output className="builder-showdown-availability"><CircleAlert size={15} aria-hidden="true" />{catalogLoading ? (locale === 'it' ? 'Caricamento del catalogo verificato…' : 'Loading the verified catalog…') : catalogError ? (locale === 'it' ? 'Servizio catalogo non disponibile: importazione ed esportazione sono sospese.' : 'The catalog service is unavailable: import and export are paused.') : catalogMeta?.dataStatus !== 'certified' ? (locale === 'it' ? 'Importazione ed esportazione disponibili solo con una release verificata. Questa release è ancora un’anteprima; la bozza resta nel browser.' : 'Import and export require a verified release. This release is still a preview; your draft remains in the browser.') : (locale === 'it' ? 'La release è certificata, ma catalogo, legalità o learnset non sono ancora completi.' : 'The release is certified, but catalog, legality, or learnset coverage is incomplete.')}</output>}
+      {showdownMode === 'import' && <div className="builder-showdown-body"><label htmlFor="showdown-import-text">{locale === 'it' ? 'Incolla il team Showdown' : 'Paste a Showdown team'}</label><textarea id="showdown-import-text" aria-describedby="showdown-import-help" value={showdownText} onChange={(event) => setShowdownText(event.target.value)} maxLength={16000} rows={8} spellCheck={false} placeholder={locale === 'it' ? 'Incolla qui i set del team…' : 'Paste your team sets here…'} /><p id="showdown-import-help">{locale === 'it' ? 'Il formato Showdown usa i nomi ufficiali inglesi, anche con interfaccia italiana. EV, IV e campi non supportati vengono rifiutati: nessuna conversione viene applicata senza una regola verificata.' : 'Showdown text uses official English names, even when the interface is Italian. Unsupported EV, IV, and format fields are rejected; no conversion is applied without a verified rule.'}</p><button className="builder-showdown-primary" type="button" onClick={() => void runShowdownImport()} disabled={!showdownReady || !showdownText.trim() || showdownBusy}>{showdownBusy ? (locale === 'it' ? 'Importazione…' : 'Importing…') : (locale === 'it' ? 'Importa team' : 'Import team')}</button></div>}
+      {showdownMode === 'export' && <div className="builder-showdown-body"><p>{locale === 'it' ? 'Esporta gli slot del team corrente come testo Showdown.' : 'Export the current team slots as Showdown text.'}</p><button className="builder-showdown-primary" type="button" onClick={() => void runShowdownExport()} disabled={!showdownReady || !slots.some(Boolean) || showdownBusy}>{showdownBusy ? (locale === 'it' ? 'Esportazione…' : 'Exporting…') : (locale === 'it' ? 'Genera testo' : 'Generate text')}</button>{showdownOutput && <><label htmlFor="showdown-export-text">{locale === 'it' ? 'Testo pronto da copiare' : 'Text ready to copy'}<textarea id="showdown-export-text" value={showdownOutput} readOnly rows={8} onFocus={(event) => event.target.select()} /></label><button className="builder-showdown-copy" type="button" onClick={() => void copyShowdownOutput()}>{locale === 'it' ? 'Copia testo' : 'Copy text'}</button></>}</div>}
+      {showdownMessage && <div className="builder-showdown-feedback" role={showdownIssues.length ? 'alert' : 'status'} aria-live="polite"><p>{showdownMessage}</p>{showdownIssues.length > 0 && <ul>{showdownIssues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul>}</div>}
+    </section>
     <div className="builder-grid">
       <aside className="builder-roster" aria-label={copyForLocale.team}><div className="builder-roster-heading"><div><h2>{copyForLocale.team}</h2><p>{catalogError ? catalogErrorMessage(catalogError, copyForLocale) : copyForLocale.catalogHint}</p></div><strong>{slots.filter(Boolean).length} / 6</strong></div><div className="builder-slots">{slots.map((slot, index) => { const pokemon = slot ? activeCatalog.find((entry) => entry.api?.formId === slot.pokemonId || entry.name === slot.pokemonName) : null; return <button type="button" key={index} aria-pressed={selectedSlot === index} className={`builder-slot ${selectedSlot === index ? 'builder-slot-active' : ''} ${slot ? '' : 'builder-slot-empty'}`} onClick={() => setSelectedSlot(index)}><span className="builder-slot-number">{index + 1}</span>{pokemon ? <span className="builder-slot-copy"><strong>{locale === 'it' ? pokemon.nameIt ?? pokemon.name : pokemon.name}</strong><small>{locale === 'it' ? pokemon.roleIt ?? pokemon.role : pokemon.role}</small><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span></span> : <span className="builder-slot-copy"><strong>{copyForLocale.emptySlot}</strong><small>{copyForLocale.addPokemon}</small></span>}</button>; })}</div><button type="button" className="add-button" onClick={addPokemon} disabled={slots.every(Boolean) || catalogLoading}><Plus size={16} /> {copyForLocale.addPokemon}</button></aside>
       <section className="builder-editor" aria-live="polite">{selected && activeCatalog.find((entry) => entry.api?.formId === selected.pokemonId || entry.name === selected.pokemonName) ? <BuilderSetEditor copyForLocale={copyForLocale} locale={locale} pokemon={activeCatalog.find((entry) => entry.api?.formId === selected.pokemonId || entry.name === selected.pokemonName)!} slot={selected} natureOptions={catalogOptions.natures} typeOptions={catalogOptions.types} onUpdate={updateSlot} onRemove={removePokemon} /> : <div className="builder-empty-state">{catalogLoading ? <output>{copyForLocale.loadingCatalog}</output> : catalogError ? <div role="alert"><p>{catalogErrorMessage(catalogError, copyForLocale)}</p><button type="button" onClick={() => void loadCatalog()}>{copyForLocale.retry}</button></div> : <><div className="builder-empty-icon"><Plus size={22} /></div><h2>{copyForLocale.selectSlot}</h2><p>{copyForLocale.emptyBuilderHelp}</p><label className="builder-search"><span>{copyForLocale.searchPokemon}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copyForLocale.searchPokemon} /></label><div className="catalog-heading"><h2>{copyForLocale.catalog}</h2><span>{visibleCatalog.length}</span></div><div className="catalog-list">{visibleCatalog.map((pokemon) => <button type="button" className="catalog-option" key={pokemon.name} onClick={() => choosePokemon(pokemon.name)}><span className="pokemon-monogram">{pokemon.name.slice(0, 2).toUpperCase()}</span><span><strong>{locale === 'it' ? pokemon.nameIt ?? pokemon.name : pokemon.name}</strong><small>{locale === 'it' ? pokemon.roleIt ?? pokemon.role : pokemon.role}</small></span><span className="slot-types">{pokemon.types.map((type) => <TypeTag type={type} locale={locale} key={type} />)}</span><ArrowRight size={16} aria-hidden="true" /></button>)}{visibleCatalog.length === 0 && <p className="catalog-empty">{copyForLocale.noResults}</p>}</div></>}</div>}</section>

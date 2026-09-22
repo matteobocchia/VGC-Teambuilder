@@ -145,6 +145,36 @@ try {
   assert(malformedCalculator.response.status === 400, `malformed calculator returned ${malformedCalculator.response.status}`);
   assert(malformedCalculator.body.issues?.some((entry) => entry.code === 'BATTLE_MODE_REQUIRED'), 'malformed calculator did not expose request validation issues');
 
+  const showdownImport = await request('/api/v1/showdown/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ formatId, dataReleaseId: releaseId, text: 'Flutter Mane @ Choice Specs\nAbility: Protosynthesis\nEVs: 252 SpA / 252 Spe\nTimid Nature\n- Moonblast' }),
+  });
+  assert(showdownImport.response.status === 422, `Showdown import returned ${showdownImport.response.status}`);
+  assert(showdownImport.body.issues?.some((entry) => entry.code === 'LEGACY_CONVERSION_POLICY_UNAVAILABLE'), 'Showdown import silently accepted legacy EVs');
+  assert(showdownImport.body.issues?.some((entry) => entry.code === 'DATA_UNVERIFIED'), 'Showdown import did not enforce release status');
+  assert(!showdownImport.body.issues?.some((entry) => entry.code === 'UNKNOWN_SHOWDOWN_NAME'), 'Showdown parser failed to split a valid Pokémon/item header');
+  assert(!showdownImport.body.data, 'Showdown import exposed a converted team from unverified data');
+
+  const showdownStatPointsImport = await request('/api/v1/showdown/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ formatId, dataReleaseId: releaseId, text: 'Mane (Flutter Mane) @ Choice Specs\nAbility: Protosynthesis\nLevel: 50\nStat Points: 26 SpA / 26 Spe\nTimid Nature\n- Moonblast' }),
+  });
+  assert(showdownStatPointsImport.response.status === 422, `Showdown Stat Points import returned ${showdownStatPointsImport.response.status}`);
+  assert(showdownStatPointsImport.body.issues?.some((entry) => entry.code === 'DATA_UNVERIFIED'), 'Showdown Stat Points import did not enforce release status');
+  assert(!showdownStatPointsImport.body.issues?.some((entry) => ['UNKNOWN_SHOWDOWN_NAME', 'UNKNOWN_NATURE', 'MOVE_NOT_LEARNABLE'].includes(entry.code)), 'Showdown Stat Points parser rejected valid release labels');
+  assert(!showdownStatPointsImport.body.data, 'Showdown Stat Points import exposed a team from unverified data');
+
+  const showdownExport = await request('/api/v1/showdown/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ formatId, dataReleaseId: releaseId, slots: [null, null, null, null, null, null] }),
+  });
+  assert(showdownExport.response.status === 422, `Showdown export returned ${showdownExport.response.status}`);
+  assert(showdownExport.body.issues?.some((entry) => entry.code === 'DATA_UNVERIFIED'), 'Showdown export did not enforce release status');
+  assert(!showdownExport.body.data?.text, 'Showdown export emitted text from unverified data');
+
   const unknownRelease = await request(`/api/v1/catalog/context?formatId=${formatId}&dataReleaseId=release-does-not-exist`);
   assert(unknownRelease.response.status === 404, `unknown release returned ${unknownRelease.response.status}`);
   assert(unknownRelease.body.issues?.[0]?.code === 'UNKNOWN_RELEASE', 'unknown release error code mismatch');
@@ -159,7 +189,7 @@ try {
     releaseId,
     dataStatus: context.body.meta.dataStatus,
     catalogCount: catalog.body.data.pokemon.length,
-    checks: ['fixture-checksum', 'context-coverage', 'catalog', 'calculator-request-validation', 'calculator-unverified', 'unknown-release', 'invalid-pagination'],
+    checks: ['fixture-checksum', 'context-coverage', 'catalog', 'calculator-request-validation', 'calculator-unverified', 'showdown-legacy-boundary', 'showdown-header-parser', 'showdown-stat-points-boundary', 'showdown-unverified', 'unknown-release', 'invalid-pagination'],
   }, null, 2));
 } finally {
   if (ownsServer) server.kill('SIGTERM');
