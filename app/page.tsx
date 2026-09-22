@@ -118,12 +118,13 @@ function setForPokemon(pokemon: Pokemon): PokemonSet {
   const source = pokemon.api;
   if (!source) return cloneSet(defaultSets['Flutter Mane']);
   const initial = source?.initialSet;
+  const natureById: Record<string, string> = { hardy: 'Hardy', adamant: 'Adamant (+Atk, -SpA)', modest: 'Modest (+SpA, -Atk)', timid: 'Timid (+Spe, -Atk)', careful: 'Careful (+SpD, -SpA)', quiet: 'Quiet (+SpA, -Spe)', bold: 'Bold (+Def, -Atk)', jolly: 'Jolly (+Spe, -SpA)' };
   const moves = initial?.moveIds.map((id) => optionLabel(source.learnableMoves.find((move) => move.id === id))).filter(Boolean) ?? source?.learnableMoves.slice(0, 4).map((move) => optionLabel(move)) ?? [];
   return {
     tera: initial?.teraTypeId ? optionLabel(source.types.find((type) => type.id === initial.teraTypeId)) || 'Normal' : 'Normal',
     item: initial?.itemId ? optionLabel(source.items.find((item) => item.id === initial.itemId)) || 'None' : 'None',
     ability: initial?.abilityId ? optionLabel(source.abilities.find((ability) => ability.id === initial.abilityId)) || optionLabel(source.abilities[0]) : optionLabel(source?.abilities[0]) || '—',
-    nature: 'Hardy',
+    nature: natureById[initial?.natureId?.split(':').pop() ?? 'hardy'] ?? 'Hardy',
     statPoints: initial?.statPoints ? { ...initial.statPoints } : { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
     moves: moves.length ? moves.slice(0, 4) : ['Protect'],
   };
@@ -238,8 +239,10 @@ function TypeTag({ type, locale = 'en' }: { type: string; locale?: Locale }) {
   return <span className={`type-tag ${typeClass(type)}`}>{locale === 'it' ? (typeNamesIt[type] ?? type) : type}</span>;
 }
 
-function SelectControl({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
-  return <label className="control-field"><span>{label}</span><span className="select-wrap"><select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label}>{options.map((option) => <option key={option}>{option}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>;
+type SelectOption = string | { value: string; label: string };
+
+function SelectControl({ label, value, options, onChange }: { label: string; value: string; options: SelectOption[]; onChange: (value: string) => void }) {
+  return <label className="control-field"><span>{label}</span><span className="select-wrap"><select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label}>{options.map((option) => { const normalized = typeof option === 'string' ? { value: option, label: option } : option; return <option key={normalized.value} value={normalized.value}>{normalized.label}</option>; })}</select><ChevronDown size={15} aria-hidden="true" /></span></label>;
 }
 
 function TopBar({ locale, setLocale, copyForLocale, activePath, saved, onSave, showSave }: { locale: Locale; setLocale: (locale: Locale) => void; copyForLocale: (typeof copy)[Locale]; activePath: string; saved: boolean; onSave: () => void; showSave: boolean }) {
@@ -430,11 +433,11 @@ function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, natureOptions,
   const { set } = slot;
   const derivedStats = deriveStats(pokemon, set);
   const statEntries = [['HP', 'hp'], ['Atk', 'atk'], ['Def', 'def'], ['Sp. Atk', 'spa'], ['Sp. Def', 'spd'], ['Speed', 'spe']] as const;
-  const moveOptions = pokemon.api?.learnableMoves.map((move) => optionLabel(move, locale)) ?? Object.values(moveCatalog).map((move) => move.name);
-  const itemOptions = pokemon.api?.items.map((item) => optionLabel(item, locale)) ?? ['Choice Specs', 'Safety Goggles', 'Focus Sash', 'Assault Vest', 'Rocky Helmet', 'Mental Herb', 'Booster Energy'];
-  const abilityOptions = pokemon.api?.abilities.map((ability) => optionLabel(ability, locale)) ?? ['Protosynthesis', 'Intimidate', 'Grassy Surge', 'Unseen Fist', 'Regenerator', 'Armor Tail'];
-  const teraOptions = typeOptions.map((type) => optionLabel(type, locale));
-  const natureLabels = natureOptions.map((nature) => optionLabel(nature, locale));
+  const moveOptions: SelectOption[] = pokemon.api?.learnableMoves.map((move) => ({ value: optionLabel(move), label: optionLabel(move, locale) })) ?? Object.values(moveCatalog).map((move) => move.name);
+  const itemOptions: SelectOption[] = pokemon.api?.items.map((item) => ({ value: optionLabel(item), label: optionLabel(item, locale) })) ?? ['Choice Specs', 'Safety Goggles', 'Focus Sash', 'Assault Vest', 'Rocky Helmet', 'Mental Herb', 'Booster Energy'];
+  const abilityOptions: SelectOption[] = pokemon.api?.abilities.map((ability) => ({ value: optionLabel(ability), label: optionLabel(ability, locale) })) ?? ['Protosynthesis', 'Intimidate', 'Grassy Surge', 'Unseen Fist', 'Regenerator', 'Armor Tail'];
+  const teraOptions: SelectOption[] = typeOptions.map((type) => ({ value: optionLabel(type), label: optionLabel(type, locale) }));
+  const natureLabels: SelectOption[] = natureOptions.map((nature) => ({ value: optionLabel(nature), label: optionLabel(nature, locale) }));
   const updateStat = (key: StatKey, value: number) => onUpdate({ statPoints: clampStatPoints({ ...set.statPoints, [key]: value }, key) });
   const updateMove = (index: number, value: string) => onUpdate({ moves: set.moves.map((move, moveIndex) => moveIndex === index ? value : move) });
 
@@ -458,7 +461,7 @@ function BuilderSetEditor({ copyForLocale, locale, pokemon, slot, natureOptions,
     <div className="builder-stat-grid">{statEntries.map(([label, key]) => <label className="builder-stat-row" key={key}><span>{label}</span><input type="number" min={0} max={32} value={set.statPoints[key]} aria-label={`${label} Stat Points`} onChange={(event) => updateStat(key, Number(event.target.value))} /><input type="range" min={0} max={32} value={set.statPoints[key]} aria-label={`${label} Stat Points slider`} onChange={(event) => updateStat(key, Number(event.target.value))} /><b>{derivedStats[key]}</b></label>)}</div>
     <div className="builder-divider" />
     <div className="builder-section-heading"><div><h2>{copyForLocale.moves}</h2><p>{copyForLocale.moveHint}</p></div><span>4 / 4</span></div>
-    <div className="builder-move-grid">{set.moves.map((move, index) => <label className="builder-move-field" key={`${index}-${move}`}><span>{index + 1}</span><span className="select-wrap"><select value={move} aria-label={`${copyForLocale.moves} ${index + 1}`} onChange={(event) => updateMove(index, event.target.value)}>{moveOptions.map((option) => <option key={option}>{option}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>)}</div>
+    <div className="builder-move-grid">{set.moves.map((move, index) => <label className="builder-move-field" key={`${index}-${move}`}><span>{index + 1}</span><span className="select-wrap"><select value={move} aria-label={`${copyForLocale.moves} ${index + 1}`} onChange={(event) => updateMove(index, event.target.value)}>{moveOptions.map((option) => { const normalized = typeof option === 'string' ? { value: option, label: option } : option; return <option key={normalized.value} value={normalized.value}>{normalized.label}</option>; })}</select><ChevronDown size={15} aria-hidden="true" /></span></label>)}</div>
   </div>;
 }
 
@@ -476,6 +479,7 @@ function BuilderWorkspace() {
   const [catalogError, setCatalogError] = useState<ApiClientError | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [storedSlots, setStoredSlots] = useState<unknown[] | null>(null);
+  const [storedCatalog, setStoredCatalog] = useState<Pokemon[] | null>(null);
   const copyForLocale = copy[locale];
   const loadCatalog = useCallback(async (signal?: AbortSignal) => {
     setCatalogLoading(true);
@@ -503,7 +507,7 @@ function BuilderWorkspace() {
     const timer = window.setTimeout(() => void loadCatalog(controller.signal), 0);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [loadCatalog]);
-  const activeCatalog = catalogEntries ?? pokemonCatalog;
+  const activeCatalog = catalogEntries ?? storedCatalog ?? (catalogError ? [] : pokemonCatalog);
   const selected = slots[selectedSlot];
   const takenNames = new Set(slots.filter((slot, index) => slot && index !== selectedSlot).map((slot) => slot?.pokemonId ?? slot?.pokemonName));
   const visibleCatalog = activeCatalog.filter((pokemon) => !takenNames.has(pokemon.api?.formId ?? pokemon.name) && [pokemon.name, pokemon.nameIt ?? '', pokemon.role, pokemon.roleIt ?? ''].join(' ').toLowerCase().includes(query.trim().toLowerCase()));
@@ -514,7 +518,12 @@ function BuilderWorkspace() {
         const stored = JSON.parse(window.localStorage.getItem('vgc-forge:builder-v1') ?? '{}') as { locale?: Locale; teamName?: string; slots?: BuilderSlot[]; selectedSlot?: number };
         if (stored.locale === 'en') setLocale('en');
         if (typeof stored.teamName === 'string') setTeamName(stored.teamName);
-        if (Array.isArray(stored.slots)) setStoredSlots(stored.slots);
+        const cachedCatalog = Array.isArray((stored as { catalog?: unknown }).catalog) ? (stored as { catalog: Pokemon[] }).catalog : null;
+        if (Array.isArray(stored.slots)) {
+          setStoredSlots(stored.slots);
+          setSlots(restoreBuilderSlots(stored.slots, cachedCatalog ?? pokemonCatalog));
+        }
+        if (cachedCatalog) setStoredCatalog(cachedCatalog);
         if (typeof stored.selectedSlot === 'number' && stored.selectedSlot >= 0 && stored.selectedSlot < 6) setSelectedSlot(stored.selectedSlot);
       } catch {
         // Ignore malformed local drafts and keep a clean six-slot builder.
@@ -544,7 +553,7 @@ function BuilderWorkspace() {
     setQuery('');
   };
   const saveBuilder = () => {
-    window.localStorage.setItem('vgc-forge:builder-v1', JSON.stringify({ locale, teamName, slots, selectedSlot }));
+    window.localStorage.setItem('vgc-forge:builder-v1', JSON.stringify({ locale, teamName, slots, selectedSlot, catalog: catalogEntries ?? storedCatalog ?? undefined }));
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1800);
   };
