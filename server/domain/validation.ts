@@ -36,6 +36,13 @@ export function validateSet(input: unknown, formatId: string): SetValidation {
   const issues: Issue[] = [];
   if (!isRecord(input)) return { set: null, stats: null, issues: [issue('/set', 'SET_OBJECT_REQUIRED', 'Set must be an object.')] };
 
+  // Champions stores training as Stat Points. Legacy Showdown EV/IV fields
+  // are never converted implicitly: callers must use the explicit import
+  // policy before reaching set validation.
+  for (const field of ['ev', 'evs', 'iv', 'ivs', 'EV', 'EVs', 'IV', 'IVs']) {
+    if (field in input) issues.push(issue(`/set/${field}`, 'UNSUPPORTED_LEGACY_STAT_FIELD', 'EV/IV fields are not supported for Champions sets; provide Stat Points instead.'));
+  }
+
   const speciesId = input.speciesId;
   const pokemon = typeof speciesId === 'string' ? findCatalogPokemon(speciesId) : undefined;
   if (!pokemon) issues.push(issue('/set/speciesId', 'UNKNOWN_SPECIES', 'Species is not present in the selected release.'));
@@ -45,7 +52,7 @@ export function validateSet(input: unknown, formatId: string): SetValidation {
 
   const format = getFormat(formatId);
   if (!format) issues.push(issue('/formatId', 'UNKNOWN_FORMAT', 'Format is not available.'));
-  else if (pokemon && !pokemon.legalFormats.includes(format.id)) issues.push(issue('/set/speciesId', 'FORMAT_INCOMPATIBLE', 'Species/form is not available in this format.'));
+  else if (pokemon && pokemon.legalityStatus !== 'unknown' && !pokemon.legalFormats.includes(format.id)) issues.push(issue('/set/speciesId', 'FORMAT_INCOMPATIBLE', 'Species/form is not available in this format.'));
 
   const formId = input.formId;
   if (formId !== undefined && (typeof formId !== 'string' || !pokemon || formId !== pokemon.formId)) issues.push(issue('/set/formId', 'FORM_MISMATCH', 'Form does not belong to the selected species.'));

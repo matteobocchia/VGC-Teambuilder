@@ -24,6 +24,7 @@ export const formatProfile: FormatProfile = {
   id: FORMAT_ID,
   labels: { it: 'Regolamento M-B · Doppio', en: 'Regulation M-B · Doubles' },
   game: 'pokemon-champions',
+  context: 'vgc-championship',
   battleMode: 'doubles',
   level: 50,
   dataReleaseId: RELEASE_ID,
@@ -122,11 +123,12 @@ export const roleOptions: Option[] = Array.from(new Map(catalog.map((entry) => [
 export const abilityOptions: Option[] = Array.from(new Map(catalog.flatMap((entry) => entry.abilities).map((entry) => [entry.id, entry])).values());
 
 export function getCatalog(): CatalogPokemon[] {
-  return catalog.map((entry) => ({ ...entry, types: [...entry.types], abilities: [...entry.abilities], items: [...entry.items], learnableMoves: [...entry.learnableMoves] }));
+  return catalog.map((entry) => ({ ...entry, legalityStatus: 'unknown', types: [...entry.types], abilities: [...entry.abilities], items: [...entry.items], learnableMoves: [...entry.learnableMoves] }));
 }
 
 export function findCatalogPokemon(id: string): CatalogPokemon | undefined {
-  return catalog.find((entry) => entry.id === id || entry.speciesId === id || entry.formId === id);
+  const entry = catalog.find((candidate) => candidate.id === id || candidate.speciesId === id || candidate.formId === id);
+  return entry ? { ...entry, legalityStatus: 'unknown', types: [...entry.types], abilities: [...entry.abilities], items: [...entry.items], learnableMoves: [...entry.learnableMoves] } : undefined;
 }
 
 export function getFormat(formatId: string = FORMAT_ID): FormatProfile | undefined {

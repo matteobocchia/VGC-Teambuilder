@@ -2,15 +2,18 @@
   "release": {
     "releaseId": "fixture-minimal-v1",
     "schemaVersion": "1.0",
-    "checksum": "7db1b43a1e89812cfc1f2d667621b26194ae0d54edbb7eb6db2579489150572c",
+    "checksum": "ec4d622cef1c74f04ca91f5b2726d9ebc69a9068224b254bc5e6032c266bf4ea",
     "source": "automated-fixture",
-    "dataStatus": "unverified"
+    "dataStatus": "unverified",
+    "game": "pokemon-champions",
+    "regulation": "fixture"
   },
   "formats": [
     {
       "formatId": "fixture-doubles",
       "game": "pokemon-champions",
       "battleMode": "doubles",
+      "context": "fixture",
       "level": 50,
       "labels": { "it": "Fixture Doppio", "en": "Fixture Doubles" },
       "rules": {},

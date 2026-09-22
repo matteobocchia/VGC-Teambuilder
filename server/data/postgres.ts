@@ -166,7 +166,7 @@ export async function getPostgresCatalog(context: RuntimeContext): Promise<Catal
   const legalities = arrayOf(context.bundle.legalities);
   const formatIds = formats.map((entry) => stringValue(entry.formatId)).filter(Boolean);
   return forms
-    .map((form) => mapPokemon(form, species.get(stringValue(form.speciesId)), context.bundle, formatIds, legalities))
+    .map((form) => mapPokemon(form, species.get(stringValue(form.speciesId)), context.bundle, context.format.id, formatIds, legalities))
     .filter((entry): entry is CatalogPokemon => entry !== undefined)
     .filter((entry) => entry.legalFormats.includes(context.format.id) || entry.legalFormats.length === 0);
 }
@@ -219,12 +219,15 @@ function mapFormat(row: ContextRow): FormatProfile {
   const rules = objectValue(row.rules) ?? {};
   const capabilities = objectValue(row.capabilities) ?? {};
   const statPoints = objectValue(rules.statPoints) ?? {};
+  const context = stringValue(rules.context);
   const level = integerValue(row.level, 50);
   if (level !== 50) throw new PostgresRepositoryError('DATA_RELEASE_CORRUPT', `Format ${row.format_id} has unsupported level ${level}.`);
+  if (!['ranked-battles', 'vgc-championship', 'fixture'].includes(context)) throw new PostgresRepositoryError('DATA_RELEASE_CORRUPT', `Format ${row.format_id} has an invalid competition context.`);
   return {
     id: row.format_id,
     labels: labelsValue(row.labels, row.format_id),
     game: row.game as FormatProfile['game'],
+    context: context as FormatProfile['context'],
     battleMode: row.battle_mode,
     level: 50,
     dataReleaseId: row.release_id,
@@ -241,7 +244,7 @@ function mapFormat(row: ContextRow): FormatProfile {
   };
 }
 
-function mapPokemon(form: JsonObject, species: JsonObject | undefined, bundle: JsonObject, formatIds: string[], legalities: JsonObject[]): CatalogPokemon | undefined {
+function mapPokemon(form: JsonObject, species: JsonObject | undefined, bundle: JsonObject, formatId: string, formatIds: string[], legalities: JsonObject[]): CatalogPokemon | undefined {
   const formId = stringValue(form.formId);
   const speciesId = stringValue(form.speciesId);
   if (!formId || !speciesId) return undefined;
@@ -251,17 +254,22 @@ function mapPokemon(form: JsonObject, species: JsonObject | undefined, bundle: J
   const baseStats = statValues(form.baseStats);
   if (!baseStats) return undefined;
   const formatLegality = legalities.filter((entry) => {
+    if (stringValue(entry.formatId) !== formatId) return false;
     const entityId = stringValue(entry.entityId);
     return entityId === formId || entityId === speciesId;
   });
-  const legalFormats = stringArray(form.legalFormats).length
-    ? stringArray(form.legalFormats)
-    : formatLegality.filter((entry) => stringValue(entry.status) === 'allowed').map((entry) => stringValue(entry.formatId)).filter(Boolean);
+  const explicitStatus = stringValue(
+    formatLegality.find((entry) => stringValue(entry.entityId) === formId)?.status
+      ?? formatLegality.find((entry) => stringValue(entry.entityId) === speciesId)?.status,
+  );
+  const legalityStatus = explicitStatus === 'allowed' || explicitStatus === 'banned' || explicitStatus === 'conditional' ? explicitStatus : 'unknown';
+  const legalFormats = legalityStatus === 'allowed' ? [formatId] : [];
   const role = optionValue(form.role, `role:${formId}`, 'Role', 'Ruolo');
   return {
     id: formId,
     speciesId,
     formId,
+    legalityStatus,
     labels: entityLabels,
     role,
     types: optionArray(form.types, 'type', bundle),
@@ -317,10 +325,6 @@ function objectValue(value: unknown): JsonObject | undefined {
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.map(stringValue).filter(Boolean) : [];
 }
 
 function integerValue(value: unknown, fallback: number): number {

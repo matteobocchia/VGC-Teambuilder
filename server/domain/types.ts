@@ -1,6 +1,7 @@
 export type Locale = 'it' | 'en';
 export type DataStatus = 'certified' | 'provisional' | 'unverified';
 export type BattleMode = 'singles' | 'doubles';
+export type FormatContext = 'ranked-battles' | 'vgc-championship' | 'fixture';
 export type StatKey = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
 export type StatValues = Record<StatKey, number>;
 
@@ -36,6 +37,7 @@ export type FormatProfile = {
   id: string;
   labels: Labels;
   game: 'pokemon-champions';
+  context: FormatContext;
   battleMode: BattleMode;
   level: 50;
   dataReleaseId: string;
@@ -51,6 +53,8 @@ export type FormatProfile = {
 export type CatalogPokemon = Option & {
   speciesId: string;
   formId: string;
+  /** Availability in the selected format; unknown means catalog-only data. */
+  legalityStatus?: 'allowed' | 'banned' | 'conditional' | 'unknown';
   role: Option;
   types: Option[];
   baseStats: StatValues;
