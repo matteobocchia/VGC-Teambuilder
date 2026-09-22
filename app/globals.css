@@ -60,7 +60,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .format-banner button { margin-left: auto; border: 0; background: transparent; color: var(--ink); font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
 .format-banner small { color: var(--muted); font-size: 10px; letter-spacing: .04em; }
 .engine-status-label { color: var(--ink); font-weight: 800; }
-.preset-callout { display: flex; align-items: center; gap: 8px; margin: 0 30px 12px; padding: 10px 14px; border: 1px solid var(--ink); background: #fff9d9; color: var(--ink); font-size: 11px; font-weight: 750; line-height: 1.35; }
+.preset-callout { display: flex; align-items: center; gap: 8px; margin: 0 30px 12px; padding: 10px 14px; border: 1px solid var(--ink); background: var(--yellow); color: var(--ink); font-size: 11px; font-weight: 750; line-height: 1.35; }
 .calculator-data-state { max-width: 680px; margin: 10vh auto; padding: 36px; border: 1px solid var(--line); background: var(--paper); box-shadow: 6px 6px 0 var(--ink); }
 .calculator-data-state h1 { margin: 0; font-size: clamp(28px, 5vw, 48px); line-height: .95; }
 .calculator-data-state p { margin: 14px 0 0; max-width: 48ch; color: var(--muted); line-height: 1.5; }

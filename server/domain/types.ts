@@ -124,17 +124,3 @@ export const emptyField: FieldState = {
   trickRoom: false,
   gravity: false,
 };
-
-export type DamageRequest = {
-  formatId: string;
-  dataReleaseId?: string;
-  mode: BattleMode;
-  attacker: CompetitiveSet;
-  defender: CompetitiveSet;
-  moveId: string;
-  field: FieldState;
-  critical: boolean;
-  spread: boolean;
-  teamRevisionId?: string;
-  attackerSlot?: number;
-};
